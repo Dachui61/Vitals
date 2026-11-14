@@ -6,18 +6,31 @@ Blocked by: 23
 
 ## Question
 
-依据 01（IOReportHub 不可行，但发现 `/usr/lib/libSMC.dylib` 可无特权读数值温度）与 23（哪个键是 CPU die）的结论，**数值 CPU 温度**最终走哪条后端？
+**已确定的部分**（来自票 21 同轮的回答，不需要再讨论）：
+
+- 后端 = **`/usr/lib/libSMC.dylib` 无特权读取**（dlopen + `SMCOpenConnectionWithDefaultService` / `SMCReadKeyAsNumeric` / `SMCGetKeyInfo`）。接受使用私有 dylib，**前提是能力探测 + 自动降级**：dlopen 失败、符号缺失、连接失败、键不存在、读值越界——任一情况都退到 thermalState 四档并在界面写明原因。
+- 可信度标注：若 CPU die 键的身份只是**推断**出来的，界面照常显示读数，但必须标为**近似值**并显示实际传感器名（如「Tp05·近似」），不得冒充权威值。
+- 热压力等级独立成行、四档、**不叫"温度"**；温度类阈值告警在后端不可用时按"不可用"处理，不得静默不触发；等级类告警保留。
+- 不引入特权组件（票 21），所以本票的选项里不再有特权路径。
+
+**本票剩下的决策**：票 23 拿到证据后，定下——
+
+1. **主显示键**（哪个键当"核心温度"）与**降级顺序**（主键读不到时依次用哪个）。
+2. **降级链的最终形态**：libSMC → thermalState 四档 → "不可用 + 原因"，每级的触发条件与界面文案。
+3. 探针策略：启动时探一次还是定期重探（芯片/机型差异），以及探测结果要不要落盘。
+4. 如果票 23 只能给出"推断"结论，界面文案怎么写才能既显示信息又不误导。
+
+依据 01（IOReportHub 不可行，但发现 libSMC 可无特权读数值温度）与 23（哪个键是 CPU die）的结论，**数值 CPU 温度**最终走哪条后端？
 
 **已被排除**：
 - IOReportHub——macOS 27 的通道空间里没有 CPU die 温度通道，且原始样本缓冲区被 KERN_NO_SPACE 挡住（票 01）。
 - 特权 powermetrics——macOS 27 已无 smc sampler，root 也拿不到 die 温度（票 02）。
+- 特权组件——票 21 决定不装。
 
 **候选**：
-- (a) **`/usr/lib/libSMC.dylib`（无特权）**——`SMCOpenConnectionWithDefaultService` / `SMCReadKeyAsNumeric` / `SMCGetKeyInfo`，单次读 ~100 µs，1 Hz 无压力。需票 23 定下"CPU die 是哪个键"。私有 API，须带能力探测（dlopen 失败 / 符号缺失 / 键不存在 → 一律走降级）。
+- (a) **`/usr/lib/libSMC.dylib`（无特权）**——单次读 ~100 µs，1 Hz 无压力。需票 23 定下"CPU die 是哪个键"。
 - (b) **thermalState 四档**——公开 API，零成本，唯一的保底。
 - (c) **组合**：(a) 优先，失败降 (b)，再失败显示"不可用 + 原因"。
-
-若 (a) 的键语义最终只能靠负载相关性**推断**（而非直接确认），则界面必须按 GLOSSARY 把读数标为**近似值**——这条要写进 SPEC 的可信度标注规则。
 
 同时要在本票定下**降级契约**（写进 SPEC，不能含糊）：
 

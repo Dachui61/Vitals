@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 06, 21
 
 # 特权组件（LaunchDaemon + 本地 socket）
@@ -27,3 +27,13 @@ Blocked by: 06, 21
 - 降级：helper 没装/没跑/超时 → app 侧功耗显示"不可用 + 原因"，其余指标不受影响。
 
 产出：helper 源码 + LaunchDaemon plist 模板 + 安全说明（在 `docs/` 写明威胁模型、允许的动作枚举，以及"为什么不把整个 app 跑在 root 下、为什么不装第三方二进制"）。
+
+## Answer
+
+**本票作废（被票 21 的决定取代）。** 决定是"不装任何特权组件"：温度已经能无特权读到（票 01 的 `/usr/lib/libSMC.dylib`），功耗不值得用一个常驻 root 守护进程去换。
+
+因此本项目**没有特权组件**：没有 root LaunchDaemon、没有 unix socket、没有审计日志、没有 `.pkg` 里的管理员密码。
+
+票 02 / 20 / 22 三张票的成果作为**档案**保留：它们完整排除了"用 powermetrics 换 °C"与"用 IOKit SMC 端点换 °C"两条路，并还原了 168 字节的 `AppleSMCKeysEndpoint` 协议——将来若 Apple 撤掉 libSMC，这条记录就是下一步的起点。
+
+票 21 同时确定了两件相关的事：接受 dlopen 私有 dylib（但必须能力探测 + 自动降级），以及温度读数若属"推断"就要标"近似值"与传感器名。

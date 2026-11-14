@@ -7,7 +7,7 @@ A personal macOS monitor that shows the health of one machine — CPU load, CPU 
 ### Measurements
 
 **核心温度** (core temperature):
-The CPU die's temperature in °C, read from a single primary temperature sensor chosen by a fixed priority order. The name of the sensor actually read is always shown alongside the value.
+The CPU die's temperature in °C, read from a single primary temperature sensor chosen by a fixed priority order. The name of the sensor actually read is always shown alongside the value; if that sensor's identity is only inferred, the reading is marked 近似值.
 _Avoid_: 处理器温度, CPU 温度, 芯片温度
 
 **热压力等级** (thermal pressure level):
@@ -49,7 +49,3 @@ _Avoid_: 数据源, 采集方式
 **降级链** (fallback chain):
 The ordered sequence of backends tried when the preferred one is unavailable, ending in the metric being shown as 不可用. A metric never falls back to a fabricated number.
 _Avoid_: 备用方案, 容错
-
-**特权组件** (privileged component):
-The optional, separately-installed helper that reads data only root can reach. Never required for the app to run.
-_Avoid_: root 程序, 提权组件
