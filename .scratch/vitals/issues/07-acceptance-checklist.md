@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: none
 
 # 验收清单与量化指标
@@ -19,3 +19,11 @@ Blocked by: none
 - 测试形式：本机没有 XCTest / swift-testing，单元测试用 `Tests/VitalsCoreTests` 的零依赖断言运行器（`scripts/test.sh`）；其余靠手动验收。
 
 产出：`docs/acceptance.md`，并在 README 里链接它。
+
+## Answer
+
+**`docs/acceptance.md` 已写好**（79 行，六组共 30 条）：A 数据准确性（15 条，含每条的对照命令与阈值）、B 实时性（5 条）、C 资源占用（3 条）、D 行为（12 条）、E 安装（5 条）、F 文档（3 条）。每条都有**验证步骤**与**通过阈值**，并规定勾选规则（✅/❌/⏭ 写明原因）。
+
+关键阈值取自实测而非估计：CPU 总量与活动监视器差 ≤ 3 个百分点、每核 ≤ 5；内存口径差 ≤ 2%；核心温度空闲 30–60 °C 且满载 10 分钟 ≤ 90 °C、负载上升 ≥ 8 °C（票 23 实测 +12.8 °C）；温度必须带「SMC <键名> · 近似值」；**温度不可用时显示「不可用 + 原因」而不是 0**；常驻内存 ≤ 60 MB、采样自身 CPU ≤ 0.5%；告警冷却 10 分钟只发 1 次；`.pkg` 安装**不需要管理员密码**。
+
+票 18 负责逐条执行并产出 `docs/acceptance-report.md`。

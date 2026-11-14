@@ -14,6 +14,10 @@ _Avoid_: 处理器温度, CPU 温度, 芯片温度
 The operating system's own four-state verdict — nominal / fair / serious / critical — on whether the machine is thermally constrained. A level, never a number.
 _Avoid_: 温度, 过热警告
 
+**SoC 热点** (SoC hotspot):
+The temperature of the System-on-Chip package itself — the hottest point on the board, and the one closest to the throttle boundary. It rises with CPU *and* GPU load, so it is never presented as the CPU's temperature.
+_Avoid_: CPU 温度, 芯片温度, 封装温度
+
 **近似值** (approximate reading):
 A figure that is not a direct measurement of the quantity it names (e.g. a GPU load derived from a driver statistic rather than a true utilization). Always labelled as approximate in the interface.
 _Avoid_: 估算值, 估值
@@ -49,3 +53,11 @@ _Avoid_: 数据源, 采集方式
 **降级链** (fallback chain):
 The ordered sequence of backends tried when the preferred one is unavailable, ending in the metric being shown as 不可用. A metric never falls back to a fabricated number.
 _Avoid_: 备用方案, 容错
+
+**惰性探测** (lazy probing):
+Identifying which sensor to read only when the known one stops working — instead of probing on every launch. The result is cached on disk together with the machine and OS version.
+_Avoid_: 自动检测, 智能识别
+
+**窗口分档** (window level):
+Which set of blocks the floating panel shows, decided by its size: L0 is a single text line, L5 shows everything. Too short a window drops to a lower level rather than clipping content.
+_Avoid_: 响应式断点, 布局模式

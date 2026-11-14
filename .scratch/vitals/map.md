@@ -35,6 +35,8 @@ Effort: vitals
 - [悬浮窗的响应式分级布局](issues/24-responsive-graded-layout-prototype.md): 尺寸驱动内容分级（取代固定八段布局）——**L0 一行字 → L1 四瓦片 → L2 加电源/磁盘/网络 → L3 加温度卡 → L4 加进程 Top 5 → L5 加每核曲线**；宽高各算上限取小者，高度不够就退档；L0 最小 230×34；无边框可拖动可缩放 + 右下角缩放握把。
 - [悬浮窗的透明度调节](issues/25-window-opacity-control.md): **背景可调透明度（20–100%，默认 100%），文字与曲线始终不透明**；入口是菜单栏菜单里的滑块（悬浮窗内不放控件）；透明度一直生效，告警时不强制恢复；不用 `NSWindow.alphaValue`。
 - [项目骨架与构建打包](issues/06-project-scaffold-and-build.md): SPM 多 target 骨架（VitalsCore/VitalsUI/VitalsApp/Tests）已跑通，`build/Vitals.app` 双击可运行、`lsappinfo` 确认 `type="UIElement"`。三条环境事实：本机**无 XCTest 也无 swift-testing**（测试改用零依赖断言运行器）；Foundation 已有 `Measurement<Unit>` 故本项目类型叫 **`Metric<Value>`**；悬浮窗默认位置要避开 Dock（用 `visibleFrame`）与左上角桌面小组件（层级高于 `.floating`）。
+- [验收清单与量化指标](issues/07-acceptance-checklist.md): `docs/acceptance.md`（六组 30 条）已定稿——每条都有验证步骤与通过阈值，阈值取自实测（CPU 差 ≤3pt、内存口径差 ≤2%、温度 30–60°C、满载 ≤90°C、常驻 ≤60MB、告警冷却 10 分钟、`.pkg` 安装免密码）。
+- [GLOSSARY 与 ADR](issues/16-glossary-and-adrs.md): `GLOSSARY.md` 补全（新增 SoC 热点 / 惰性探测 / 窗口分档）；`docs/adr/` 三篇——温度后端与降级策略、为何不引入特权组件、私有接口的使用与降级。
 
 ## Not yet specified
 
