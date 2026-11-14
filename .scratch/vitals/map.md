@@ -31,6 +31,7 @@ Effort: vitals
 - [各指标的采集后端与实测开销](issues/03-metric-backends-research.md): v1 全套 1 Hz 约 11.8 µs，全部无特权；核型映射定案（E=能效 0–5 / P=超频 6–7 / M=性能 8–11）；三处坑已定案（tick 比例 100/s、内存"已用"口径、fork 子进程一律禁止）；"显存"改称"GPU 占用系统内存"。
 - [哪个 SMC 键才是 CPU die 温度](issues/23-smc-key-identification-research.md): 主用 `Tp0j`，降级链 `Tp0g → Tp09 → Tp07 → Tp0b → Tp05 → Tp0m → Tp0L`；`Tg*` 是 GPU、`TVD*` 是 SoC 热点、`TH0x` 一族是环境温度（票 01 误列为候选）；置信度中高但属推断，无法交叉验证 → 界面标"近似值"+ 传感器名。
 - [温度后端选型与降级契约](issues/04-temperature-backend-decision.md): 契约定稿——后端 = 无特权 libSMC；主键 `Tp0j` + 8 键降级链；**惰性探测**（平时直读，失效才做 1–2 s 负载探测并缓存到磁盘）；降级链 = libSMC → thermalState 四档 → 不可用（绝不编造数字）；核心温度标"近似值"+ 传感器名；热压力独立成行不叫"温度"；悬浮窗并列 SoC 热点，菜单栏只显示核心温度。
+- [悬浮窗视觉与布局原型](issues/05-floating-window-visual-prototype.md): 原型已跑通并定稿视觉规范——八段布局、12 条每核曲线（超频橙红/性能蓝/能效绿）、详情一位小数+瓦片整数、**主题跟随系统浅/深**、窗口**可缩放自适应**（默认 470×860 / 最小 400×620）、告警只变数字+阈值带、四种状态变体与「不可用」文案；资产在 `prototypes/`。
 
 ## Not yet specified
 
