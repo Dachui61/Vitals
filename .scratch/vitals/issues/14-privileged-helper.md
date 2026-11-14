@@ -1,16 +1,20 @@
 Type: task
 Status: open
-Blocked by: 06, 21
+Blocked by: 06, 21, 22
 
 # 特权组件（LaunchDaemon + 本地 socket）
 
 ## Question
 
-实现自研的特权组件，作为**可选**组件提供**功耗数据**（CPU/GPU/ANE 功率 mW）。
+实现自研的特权组件，作为**可选**组件提供**CPU 温度**（若票 22 验证通过）与**功耗数据**（CPU/GPU/ANE 功率 mW）。
 
-**用途已因票 02 而改变**：温度不再需要特权（macOS 27 的 powermetrics 已无 smc sampler，root 也拿不到 die °C）；特权状态下仍然拿得到的机器健康数据是功耗——`powermetrics --samplers cpu_power --show-extra-power-info -f plist`（plist 为 NUL 分隔，键 `cpu_power`/`gpu_power`/`ane_power`/`combined_power`）。
+**用途的演变**（读票 02 与 20 的结论再动手）：
+- 温度**不能**靠 powermetrics：macOS 27 已无 smc sampler（票 02），root 也拿不到 die 温度。
+- 但 `AppleSMCKeysEndpoint` 的协议已被完整还原（票 20）：`IOServiceMatching("AppleSMC")` → `IOServiceOpen(type 0)` → `IOConnectCallScalarMethod(sel 0)` → `IOConnectCallStructMethod(sel 2, 168B → 168B)` → `IOConnectCallScalarMethod(sel 1)`；请求布局 `+0x00` key 4CC（char0 在低字节）、`+0x1c` key 字节数、`+0x2a` 命令字节（取数用 6）、`+0x30` 起 key 字符，**总长必须正好 168 字节**。无特权调用返回 `kIOReturnNotPrivileged`（授权在查键之前），root 是否放行由票 22 实测。
+- 所以本组件要**直接实现这套协议**，而不是去 fork `powermetrics`——这也正好让"键名白名单"重新变得有意义（白名单 = 已验证的键，如 TC0P 等）。
+- 功耗是附带能力（`powermetrics --samplers cpu_power --show-extra-power-info -f plist`），与温度走不同的实现路径，不要混在一个请求里。
 
-**先决**：本票是否还成立，取决于票 21 的结论（要不要为功耗装特权组件）。若 21 决定不装，本票作废并从地图上删掉；若决定装，则按下面的要求做。
+**先决**：本票是否还成立，取决于票 21（要不要装特权组件）与票 22（root 到底放不放行）。若 22 结论是"不放行"，温度这半边作废，只剩功耗；若 21 决定不装，本票整体作废并从地图上删掉。
 
 实现要求：
 

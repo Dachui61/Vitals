@@ -10,7 +10,8 @@ Effort: vitals
 - 领域：macOS 系统级监控（个人自用工具）。每个会话先读 domain-modeling；涉及"该长什么样"用 prototype；需要拍板用 grilling。
 - **平台事实（本机实测，已确认）**：macOS 27.0(26A425) / Apple M6 Mac mini (Mac18,5) / 12 核（2 超频 + 4 性能 + 6 能效）/ 16GB RAM / 仅交流电、无电池；只有 Xcode Command Line Tools（无完整 Xcode），`swiftc` 可直接编译并手工打包 .app（`LSUIElement=true` 即不进 Dock）。
 - **可用数据源（无特权）**：`host_processor_info` 每核 CPU；`AGXAccelerator` → `PerformanceStatistics` 的 Device/Renderer/Tiler Utilization %（GPU 占用）；`ProcessInfo.thermalState` 四档热压力；pmset 电源状态。
-- **不可用数据源**：经典 SMC 读键路径已死（`AppleSMCUserClient` 在 macOS 27 不存在，`AppleSMCKeysEndpoint` 的读键一律 kIOReturnBadArgument）；**macOS 27 的 `powermetrics` 根本没有 smc sampler**（参数解析期即拒、exit 64；arm64e 二进制里 `smc`/`temperatur` 字节计数为 0）——"用特权换 CPU °C"从来不是个选项，root 也拿不到 die 温度；特权在本机只剩 **功耗 mW**（`--samplers cpu_power --show-extra-power-info`）一个用途；GPU 温度无任何公开路径；`IOPerformance.framework` 已从 macOS 27 的 dyld 缓存移除（IOReportHub 仍能无特权打开，私有协议待验证）。
+- **不可用数据源**：经典 SMC 读键路径已死（`AppleSMCUserClient` 在 macOS 27 不存在）；**macOS 27 的 `powermetrics` 根本没有 smc sampler**（参数解析期即拒、exit 64；arm64e 二进制里 `smc`/`temperatur` 字节计数为 0）——"用 powermetrics 换 CPU °C"不是个选项；但 **SMC 端点本身在 root 下可能放行**（票 20/22）；GPU 温度无任何公开路径；`IOPerformance.framework` 已从 macOS 27 的 dyld 缓存移除（IOReportHub 仍能无特权打开，私有协议待验证）。
+- **已还原的 SMC 协议**（票 20，`AppleSMCKeysEndpoint`，IOUserClientClass=AppleSMCClient）：`IOServiceMatching("AppleSMC")` → `IOServiceOpen(type 0)` → `IOConnectCallScalarMethod(sel 0)` → `IOConnectCallStructMethod(sel 2, 168B → 168B)` → `IOConnectCallScalarMethod(sel 1)`；请求 `+0x00` = key 4CC（char0 在低字节）、`+0x1c` = key 字节数、`+0x2a` = 命令字节（取数用 6）、`+0x30` 起 = key 字符，**长度必须正好 168 字节**。无特权调用返回 `kIOReturnNotPrivileged`（授权在查键之前 → 是身份被拒，不是通道不存在）。
 - **已定的产品决策**：形态 = 菜单栏图标 + 点击展开的独立置顶 NSWindow；指标 = v1 CPU（总 + 每核 + 按核型分组）+ CPU 数值温度 + 内存 + 电源状态，v2 加 GPU/磁盘/网络/进程 Top；进程列表只读且只显示当前用户自己的进程；无特权做不到的部分才动用特权，helper 自研自建、可选安装、键名白名单 + 对端 uid 校验 + 审计日志；温度口径 = 主 CPU 温度（同时展示实测传感器名）；后端不可用时降级为 thermalState 四档，且**绝不编造 °C**；采样 1s、滚动窗口 60s、内存内保留 10 分钟历史；菜单栏读数 = CPU% + 温度 + 内存%；告警默认温度 80°C、CPU 持续 90% 超 30s、冷却 10 分钟、阈值可在菜单内改、可整体关闭；中文界面；只支持本机 Apple Silicon；不依赖任何第三方二进制。
 - **工程约定**：SPM 多 target（VitalsCore / VitalsUI / VitalsHelper / VitalsApp / VitalsCoreTests）；采样层纯逻辑有单元测试；界面交互用手动验收清单验证；私有 IOKit API 只允许出现在温度模块内，且必须带能力探测 + 失败自动降级。
 - **本 map 承载实现执行**：票可以是实现型 `task`，代码落地并通过对应验收项即视为 resolved。
@@ -21,7 +22,8 @@ Effort: vitals
 
 <!-- 图表阶段为空：每关闭一张票，在此追加一行（gist + 链接）。 -->
 
-- [powermetrics SMC sampler 的输出格式与 CPU 温度提取](issues/02-powermetrics-smc-format-research.md): 死路——macOS 27 已删除 smc sampler，特权也拿不到 CPU °C；特权组件因此改用途为功耗 mW。
+- [powermetrics SMC sampler 的输出格式与 CPU 温度提取](issues/02-powermetrics-smc-format-research.md): 死路——macOS 27 已删除 smc sampler，特权 powermetrics 拿不到 CPU °C；特权组件因此改用途为功耗 mW。
+- [还有没有别的数值温度通道](issues/20-other-temperature-channels-research.md): 无特权下本机无任何 °C 通道；但 SMC 端点协议已被完整还原，取数只被"调用者身份"挡住——root 可能放行（待票 22 验证）。
 
 ## Not yet specified
 
