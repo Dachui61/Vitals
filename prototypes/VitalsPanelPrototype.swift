@@ -83,20 +83,20 @@ struct Theme {
     let warnYellow: Color
     let warnRed: Color
 
-    static func of(_ scheme: ColorScheme) -> Theme {
+    static func of(_ scheme: ColorScheme, opacity: Double = 1.0) -> Theme {
         switch scheme {
         case .dark:
-            return Theme(bg: Color(red: 0.09, green: 0.09, blue: 0.11),
-                         card: Color(red: 0.14, green: 0.14, blue: 0.17),
-                         stroke: Color.white.opacity(0.07),
+            return Theme(bg: Color(red: 0.09, green: 0.09, blue: 0.11).opacity(opacity),
+                         card: Color(red: 0.14, green: 0.14, blue: 0.17).opacity(opacity),
+                         stroke: Color.white.opacity(0.07).opacity(opacity),
                          primaryText: Color.white.opacity(0.92),
                          secondaryText: Color.white.opacity(0.48),
                          warnYellow: Color(red: 1.00, green: 0.76, blue: 0.25),
                          warnRed: Color(red: 1.00, green: 0.33, blue: 0.33))
         default:
-            return Theme(bg: Color(red: 0.94, green: 0.94, blue: 0.96),
-                         card: Color.white,
-                         stroke: Color.black.opacity(0.08),
+            return Theme(bg: Color(red: 0.94, green: 0.94, blue: 0.96).opacity(opacity),
+                         card: Color.white.opacity(opacity),
+                         stroke: Color.black.opacity(0.08).opacity(opacity),
                          primaryText: Color.black.opacity(0.88),
                          secondaryText: Color.black.opacity(0.45),
                          warnYellow: Color(red: 0.85, green: 0.60, blue: 0.05),
@@ -138,11 +138,17 @@ final class FakeMetrics: ObservableObject {
         (0..<60).map { _ in Double.random(in: 3...22) }
     }
     @Published var probing = false
+    /// 背景透明度（文字始终不透明）
+    @Published var opacity: Double = 1.0
 
     private var tick = 0.0
     private var timer: AnyCancellable?
 
     init() {
+        // 原型用：VITALS_OPACITY=0.6 可指定初始背景透明度
+        if let s = ProcessInfo.processInfo.environment["VITALS_OPACITY"], let v = Double(s) {
+            opacity = min(max(v, 0.2), 1.0)
+        }
         timer = Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in self?.step() }
@@ -201,7 +207,7 @@ struct PanelView: View {
         }
     }
 
-    private var t: Theme { Theme.of(scheme) }
+    private var t: Theme { Theme.of(scheme, opacity: m.opacity) }
 
     /// 分档：宽度与高度各算一个上限，取小者（内容放不下就退档）
     static func level(width: CGFloat, height: CGFloat) -> Int {
@@ -516,14 +522,25 @@ struct PanelView: View {
 
     // 仅原型：状态与外观切换器
     private var prototypeControls: some View {
-        HStack(spacing: 6) {
-            Text("原型预览").font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.6))
-            ForEach(Variant.allCases) { v in
-                pill(v.rawValue, selected: m.variant == v) { m.variant = v; m.probing = (v == .probing) }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("原型预览").font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.6))
+                ForEach(Variant.allCases) { v in
+                    pill(v.rawValue, selected: m.variant == v) { m.variant = v; m.probing = (v == .probing) }
+                }
+                Spacer()
+                ForEach(Appearance.allCases) { a in
+                    pill(a.rawValue, selected: m.appearance == a) { m.appearance = a }
+                }
             }
-            Spacer()
-            ForEach(Appearance.allCases) { a in
-                pill(a.rawValue, selected: m.appearance == a) { m.appearance = a }
+            // 透明度：正式版这个滑块在菜单栏菜单里，这里只是预览
+            HStack(spacing: 8) {
+                Text("透明度").font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.6))
+                Slider(value: $m.opacity, in: 0.2...1.0)
+                    .controlSize(.mini)
+                    .frame(maxWidth: 160)
+                Text(String(format: "%.0f%%", m.opacity * 100))
+                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(t.secondaryText)
             }
         }
     }
