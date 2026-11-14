@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 07, 09, 12, 13, 15, 16
 
 # docs/SPEC.md 完整规格
@@ -19,3 +19,9 @@ Blocked by: 07, 09, 12, 13, 15, 16
 - 术语引用 GLOSSARY.md，不重复造词。
 
 产出：`docs/SPEC.md`，与实现逐条对齐（每个用户可见行为都能在代码里指到出处）。
+
+## Answer
+
+**`docs/SPEC.md` 已写好**：目标与非目标、用户可见行为（菜单栏 / 悬浮窗分档表 / 告警）、数据模型与口径表、采集架构图、降级链、**已知的八个坑**、权限与安装、构建与验证命令、验收引用、三篇 ADR 引用。
+
+规格里明确写死了：温度是**近似值**（键语义靠推断、无法交叉验证）、已用内存的口径是"含 file-backed、与 `top` 的 PhysMem used 同口径"（与活动监视器的 Memory Used 不是一回事）、以及 `host_statistics64` 返回长度不可靠这个坑。

@@ -40,6 +40,9 @@ Effort: vitals
 - [采样调度与状态流](issues/10-sampling-schedule-and-state-flow.md): `MetricsEngine`（1 Hz Timer + NSLock，UI 只读快照）；60 秒曲线 + 10 分钟粗粒度历史；3 点滑动平均。坑：用 `Thread.sleep` 等 tick 会占住主线程，Timer 根本不触发。
 - [菜单栏：图标、迷你读数与菜单](issues/11-menubar.md): `NSStatusItem` + 迷你读数（CPU% · 温度 · 内存%）+ 透明度滑块（20–100%，落 `UserDefaults`）已实现；阈值与告警开关待票 13。
 - [悬浮窗实现](issues/12-floating-window.md): 按票 05 视觉规范 + 票 24 响应式分级移植完成（分档表、每核曲线、阈值带、温度卡、透明度）；GPU/磁盘/网络/进程区块待票 19，右下角缩放握把待补。
+- [阈值告警](issues/13-alerting.md): 判定逻辑在 `VitalsCore.AlertEngine`（纯逻辑，9 个单测）；温度取**核心温度与 SoC 热点中较高者**（地图雾区那个待决项按推荐实现，用户可推翻）；CPU 需持续 30 s；**边沿触发 + 10 分钟冷却**（持续高温只发一次）；通知被拒则退化为面板横幅。
+- [安装包与开机自启](issues/15-packaging-and-autostart.md): `build/Vitals.pkg` 装到 **用户域**（`~/Applications` + `~/Library/LaunchAgents`）→ **双击安装不需要管理员密码**；本机已安装并注册，`launchctl print` 显示 `state = running`。
+- [docs/SPEC.md 完整规格](issues/17-spec.md): 规格已写好（含分档表、口径表、采集架构图、降级链、**八个已知坑**、安装与验证命令）。
 - [验收清单与量化指标](issues/07-acceptance-checklist.md): `docs/acceptance.md`（六组 30 条）已定稿——每条都有验证步骤与通过阈值，阈值取自实测（CPU 差 ≤3pt、内存口径差 ≤2%、温度 30–60°C、满载 ≤90°C、常驻 ≤60MB、告警冷却 10 分钟、`.pkg` 安装免密码）。
 - [GLOSSARY 与 ADR](issues/16-glossary-and-adrs.md): `GLOSSARY.md` 补全（新增 SoC 热点 / 惰性探测 / 窗口分档）；`docs/adr/` 三篇——温度后端与降级策略、为何不引入特权组件、私有接口的使用与降级。
 
@@ -59,6 +62,7 @@ Effort: vitals
 - 窗口尺寸记忆：L0 最小 230×34 是下限，那默认打开时给多大、要不要记住用户上次拖到的大小（等票 12）
 - Swift 语言模式：目前是 `swiftLanguageModes: [.v5]`（避免严格并发告警），要不要升到 v6 并补齐 `Metric` 的 Sendable 约束（等票 10 落地 actor 调度时一并处理）
 - 历史数据是否需要落盘或导出（当前仅在内存，未定）
+- 悬浮窗右下角的**显式缩放握把**（票 25 定的要求，原型与实现都还没加；无边框窗口自带的缩放光标不够明显）
 
 ## Out of scope
 

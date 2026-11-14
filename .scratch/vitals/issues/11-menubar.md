@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 10
 
 # 菜单栏：图标、迷你读数与菜单

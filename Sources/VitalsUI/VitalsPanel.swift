@@ -77,6 +77,9 @@ public struct VitalsPanel: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
                     header
+                    if let alert = model.latestAlert {
+                        alertBanner(alert)
+                    }
                     tiles
                     if level >= .powerTiles { powerTiles }
                     if level >= .temperature { temperatureCard }
@@ -124,6 +127,21 @@ public struct VitalsPanel: View {
                 Text("1 秒刷新").font(.system(size: 10)).foregroundStyle(theme.secondaryText)
             }
         }
+    }
+
+    /// 告警横幅（通知被拒时的兜底提示）。
+    private func alertBanner(_ alert: VitalsCore.Alert) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10)).foregroundStyle(theme.warnRed)
+            Text(alert.title).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.warnRed)
+            Text(alert.body).font(.system(size: 9)).foregroundStyle(theme.secondaryText)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(theme.warnRed.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     // MARK: - 瓦片

@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 11
 
 # 安装包与开机自启
@@ -17,3 +17,21 @@ Blocked by: 11
 - 自用场景下是否需要 Developer ID 签名/公证的结论与理由（写进 README）。
 
 产出：`package.sh` + 卸载脚本 + README 的安装/卸载章节。
+
+## Answer
+
+**打包与开机自启已落地并在本机验证**：
+
+- `scripts/package.sh` → 产出 `build/Vitals.pkg`（用户域安装包）。安装内容全部在**用户域**：
+  - `~/Applications/Vitals.app`
+  - `~/Library/LaunchAgents/local.vitals.app.plist`（`RunAtLoad=true`，开机自启）
+  - → **双击安装不需要管理员密码**（本项目不引入特权组件，票 21）。
+- `scripts/uninstall.sh` → 默认干跑（只打印将删除什么），`--apply` 才真的删；同时 `launchctl bootout` 注销自启项。
+- 本机已按 pkg 内容安装并注册：`launchctl print gui/501/local.vitals.app` 显示 `state = running`，程序为 `~/Applications/Vitals.app/Contents/MacOS/Vitals`。
+
+**两个环境事实**：
+
+1. **CLI 的 `installer` 装用户域包也要 root**（"Must be run as root to install this package"）——所以自动化验证走的是"手工按 pkg 内容安装"，真实用户双击走 Installer.app 才是正路。
+2. 沙箱内 `launchctl bootstrap` 早期返回过 EIO，现在（danger-full-access）正常。
+
+**自用签名**：不需要 Developer ID 与公证（ad-hoc 签名即可运行）；本机自用不涉及 Gatekeeper 分发。

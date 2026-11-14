@@ -25,11 +25,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine = MetricsEngine()
     private let model = PanelViewModel()
     private var panelHosting: NSHostingView<VitalsPanel>?
+    private let alertCoordinator = AlertCoordinator()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.backgroundOpacity = Settings.shared.backgroundOpacity
+        alertCoordinator.apply(settings: Settings.shared.alertSettings)
+        alertCoordinator.requestAuthorization()
+        alertCoordinator.onAlert = { [weak self] alert in
+            self?.model.latestAlert = alert
+        }
+
         engine.onUpdate = { [weak self] snapshot in
             guard let self else { return }
+            self.alertCoordinator.evaluate(snapshot)
             self.model.update(snapshot: snapshot,
                               history: self.engine.history,
                               kinds: self.engine.coreKinds,
@@ -70,7 +78,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(opacityItem)
 
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "设置阈值…", action: #selector(thresholds), keyEquivalent: ""))
+
+        // 告警开关
+        let alertItem = NSMenuItem(title: "启用告警", action: #selector(toggleAlerts), keyEquivalent: "")
+        alertItem.state = Settings.shared.alertEnabled ? .on : .off
+        menu.addItem(alertItem)
+
+        // 阈值子菜单
+        menu.addItem(thresholdMenu(title: "温度阈值",
+                                   values: [70, 75, 80, 85, 90],
+                                   current: Settings.shared.temperatureThreshold,
+                                   action: #selector(setTemperatureThreshold(_:))))
+        menu.addItem(thresholdMenu(title: "CPU 阈值",
+                                   values: [80, 85, 90, 95],
+                                   current: Settings.shared.cpuThreshold,
+                                   action: #selector(setCPUThreshold(_:))))
         menu.addItem(NSMenuItem(title: "退出 Vitals", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
 
@@ -110,8 +132,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.backgroundOpacity = sender.doubleValue
     }
 
-    @objc private func thresholds() {
-        NSLog("Vitals: 阈值设置面板由票 13 落地")
+    /// 造一个带若干档位的阈值子菜单。
+    private func thresholdMenu(title: String, values: [Double], current: Double, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for value in values {
+            let entry = NSMenuItem(title: "\(Int(value))", action: action, keyEquivalent: "")
+            entry.target = self
+            entry.state = (value == current) ? .on : .off
+            entry.representedObject = value
+            submenu.addItem(entry)
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func toggleAlerts() {
+        Settings.shared.alertEnabled.toggle()
+        alertCoordinator.apply(settings: Settings.shared.alertSettings)
+        rebuildMenu()
+    }
+
+    @objc private func setTemperatureThreshold(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? Double else { return }
+        Settings.shared.temperatureThreshold = value
+        alertCoordinator.apply(settings: Settings.shared.alertSettings)
+        rebuildMenu()
+    }
+
+    @objc private func setCPUThreshold(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? Double else { return }
+        Settings.shared.cpuThreshold = value
+        alertCoordinator.apply(settings: Settings.shared.alertSettings)
+        rebuildMenu()
+    }
+
+    /// 重建菜单（勾选状态变了要刷新）。
+    private func rebuildMenu() {
+        guard let statusItem else { return }
+        makeStatusItem()
+        statusItem.menu = statusItem.menu
     }
 
     @objc private func quit() {
@@ -156,6 +216,9 @@ final class Settings {
 
     private enum Key {
         static let backgroundOpacity = "backgroundOpacity"
+        static let alertEnabled = "alertEnabled"
+        static let temperatureThreshold = "temperatureThreshold"
+        static let cpuThreshold = "cpuThreshold"
     }
 
     private let defaults = UserDefaults.standard
@@ -169,5 +232,36 @@ final class Settings {
         set {
             defaults.set(newValue, forKey: Key.backgroundOpacity)
         }
+    }
+
+    /// 告警总开关。
+    var alertEnabled: Bool {
+        get { defaults.object(forKey: Key.alertEnabled) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.alertEnabled) }
+    }
+
+    /// 温度阈值（°C）。
+    var temperatureThreshold: Double {
+        get {
+            let stored = defaults.double(forKey: Key.temperatureThreshold)
+            return stored <= 0 ? 80 : stored
+        }
+        set { defaults.set(newValue, forKey: Key.temperatureThreshold) }
+    }
+
+    /// CPU 占用阈值（%）。
+    var cpuThreshold: Double {
+        get {
+            let stored = defaults.double(forKey: Key.cpuThreshold)
+            return stored <= 0 ? 90 : stored
+        }
+        set { defaults.set(newValue, forKey: Key.cpuThreshold) }
+    }
+
+    /// 当前告警设置。
+    var alertSettings: AlertSettings {
+        AlertSettings(enabled: alertEnabled,
+                      temperatureThreshold: temperatureThreshold,
+                      cpuThreshold: cpuThreshold)
     }
 }

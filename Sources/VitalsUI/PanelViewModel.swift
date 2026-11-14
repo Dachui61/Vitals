@@ -13,6 +13,8 @@ public final class PanelViewModel: ObservableObject {
     @Published public private(set) var coreKinds: [CoreKind] = []
     /// 温度是否正在识别中。
     @Published public private(set) var probingTemperature = false
+    /// 最近一条告警（用于面板内的横幅提示）。
+    @Published public var latestAlert: VitalsCore.Alert?
 
     /// 背景透明度（20–100%，文字始终不透明；票 25）。
     @Published public var backgroundOpacity: Double = 1.0
