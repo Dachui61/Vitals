@@ -1,8 +1,15 @@
-// VitalsPanelPrototype.swift — 票 05：悬浮窗视觉与布局原型（第 2 版）
+// VitalsPanelPrototype.swift — 票 05 / 票 24：悬浮窗原型（响应式分级版）
 //
-// 目的：不是好看，是把"长什么样"变成可以指着看的东西。
-// 假数据驱动，覆盖四种状态变体：正常 / 温度告警 / 温度不可用 / 传感器识别中。
-// 第 2 版按评审意见改了：加 v2 区块（GPU/磁盘/网络/进程 Top 5）、主题跟随系统、窗口可缩放自适应。
+// 目的：不是好看，是把"长什么样、长多大显示什么"变成可以指着看的东西。
+// 假数据驱动；无边框、可拖动、可缩放到任意大小；内容按尺寸分档逐级增加。
+//
+// 第 3 版改动（票 24，用户指定）：
+//   L0 一行文字：CPU 占用 · 温度 · 内存
+//   L1 + 小卡片：CPU / 核心温度 / 内存 / GPU 占用
+//   L2 + 小卡片：电源 / 磁盘 / 网络
+//   L3 + 核心温度卡（大数字 + SoC 热点 + 热压力等级 + 阈值带）
+//   L4 + 进程 Top 5 卡片
+//   L5 + 每核占用（12 条曲线）
 //
 // 构建：见 prototypes/build.sh
 
@@ -56,7 +63,6 @@ enum CoreKind: Int, CaseIterable, Identifiable {
         case .effCore: return 6
         }
     }
-    /// 逻辑核下标（设备树 cluster-type 实测映射）
     var indices: [Int] {
         switch self {
         case .superCore: return [6, 7]
@@ -80,25 +86,21 @@ struct Theme {
     static func of(_ scheme: ColorScheme) -> Theme {
         switch scheme {
         case .dark:
-            return Theme(
-                bg: Color(red: 0.09, green: 0.09, blue: 0.11),
-                card: Color(red: 0.14, green: 0.14, blue: 0.17),
-                stroke: Color.white.opacity(0.07),
-                primaryText: Color.white.opacity(0.92),
-                secondaryText: Color.white.opacity(0.48),
-                warnYellow: Color(red: 1.00, green: 0.76, blue: 0.25),
-                warnRed: Color(red: 1.00, green: 0.33, blue: 0.33)
-            )
+            return Theme(bg: Color(red: 0.09, green: 0.09, blue: 0.11),
+                         card: Color(red: 0.14, green: 0.14, blue: 0.17),
+                         stroke: Color.white.opacity(0.07),
+                         primaryText: Color.white.opacity(0.92),
+                         secondaryText: Color.white.opacity(0.48),
+                         warnYellow: Color(red: 1.00, green: 0.76, blue: 0.25),
+                         warnRed: Color(red: 1.00, green: 0.33, blue: 0.33))
         default:
-            return Theme(
-                bg: Color(red: 0.94, green: 0.94, blue: 0.96),
-                card: Color.white,
-                stroke: Color.black.opacity(0.08),
-                primaryText: Color.black.opacity(0.88),
-                secondaryText: Color.black.opacity(0.45),
-                warnYellow: Color(red: 0.85, green: 0.60, blue: 0.05),
-                warnRed: Color(red: 0.85, green: 0.20, blue: 0.20)
-            )
+            return Theme(bg: Color(red: 0.94, green: 0.94, blue: 0.96),
+                         card: Color.white,
+                         stroke: Color.black.opacity(0.08),
+                         primaryText: Color.black.opacity(0.88),
+                         secondaryText: Color.black.opacity(0.45),
+                         warnYellow: Color(red: 0.85, green: 0.60, blue: 0.05),
+                         warnRed: Color(red: 0.85, green: 0.20, blue: 0.20))
         }
     }
 }
@@ -185,7 +187,7 @@ final class FakeMetrics: ObservableObject {
     }
 }
 
-// MARK: - 面板
+// MARK: - 面板（响应式）
 
 struct PanelView: View {
     @StateObject private var m = FakeMetrics()
@@ -201,19 +203,37 @@ struct PanelView: View {
 
     private var t: Theme { Theme.of(scheme) }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-            statTiles
-            temperatureCard
-            coreCurves
-            v2Row
-            processCard
-            thresholdScale
-            prototypeControls
+    /// 分档：宽度与高度各算一个上限，取小者（内容放不下就退档）
+    static func level(width: CGFloat, height: CGFloat) -> Int {
+        let byWidth: Int
+        switch width {
+        case ..<320: byWidth = 0
+        case ..<520: byWidth = 1
+        case ..<700: byWidth = 2
+        case ..<880: byWidth = 3
+        case ..<1080: byWidth = 4
+        default: byWidth = 5
         }
-        .padding(14)
-        .frame(minWidth: 380, maxWidth: .infinity, alignment: .leading)
+        // 高度阈值 = 各档内容的实测最小高度（内容放不下就退档；滚动只是兜底）
+        let byHeight: Int
+        switch height {
+        case ..<46: byHeight = 0
+        case ..<120: byHeight = 1
+        case ..<200: byHeight = 2
+        case ..<400: byHeight = 3
+        case ..<660: byHeight = 4
+        default: byHeight = 5
+        }
+        return min(byWidth, byHeight)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let lv = PanelView.level(width: geo.size.width, height: geo.size.height)
+            content(level: lv)
+                .padding(lv == 0 ? 6 : 14)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
         .background(t.bg)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
@@ -223,8 +243,48 @@ struct PanelView: View {
         .environment(\.colorScheme, scheme)
     }
 
-    // 顶部：拖拽把手 + 标题 + 采样状态 + 关闭
-    private var header: some View {
+    @ViewBuilder
+    private func content(level: Int) -> some View {
+        if level == 0 {
+            compactLine
+        } else {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 10) {
+                    header(level: level)
+                    statTiles(level: level)
+                    if level >= 2 { secondaryTiles }
+                    if level >= 3 { temperatureCard }
+                    if level >= 4 { processCard }
+                    if level >= 5 { coreCurves }
+                    if level >= 2 { prototypeControls }
+                }
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+
+    // L0：一行文字
+    private var compactLine: some View {
+        HStack(spacing: 7) {
+            inlineMetric("CPU", String(format: "%.0f%%", m.cpuTotal), t.primaryText)
+            Text("·").foregroundStyle(t.secondaryText.opacity(0.5))
+            inlineMetric("温度", tempShort(m.coreTemp), tempTint(m.coreTemp))
+            Text("·").foregroundStyle(t.secondaryText.opacity(0.5))
+            inlineMetric("内存", String(format: "%.0f%%", m.memoryPercent), t.primaryText)
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 11, weight: .medium, design: .rounded))
+    }
+
+    private func inlineMetric(_ label: String, _ value: String, _ tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Text(label).foregroundStyle(t.secondaryText)
+            Text(value).foregroundStyle(tint)
+        }
+    }
+
+    // 标题栏
+    private func header(level: Int) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 3) {
                 ForEach(0..<3, id: \.self) { _ in
@@ -247,13 +307,15 @@ struct PanelView: View {
         }
     }
 
-    // 四个指标瓦片
-    private var statTiles: some View {
+    // L1：小卡片 CPU / 核心温度 / 内存 / GPU 占用
+    private func statTiles(level: Int) -> some View {
         HStack(spacing: 8) {
             tile(title: "CPU", value: String(format: "%.0f%%", m.cpuTotal), tint: t.primaryText)
             tile(title: "核心温度", value: tempShort(m.coreTemp), tint: tempTint(m.coreTemp))
             tile(title: "内存", value: String(format: "%.0f%%", m.memoryPercent), tint: t.primaryText)
-            tile(title: "电源", value: "外接电源", tint: t.primaryText, small: true)
+            if level >= 1 {
+                tile(title: "GPU 占用", value: String(format: "%.0f%%", m.gpuPercent), tint: t.primaryText, small: true)
+            }
         }
     }
 
@@ -272,7 +334,32 @@ struct PanelView: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.stroke, lineWidth: 1))
     }
 
-    // 温度明细：核心温度 + SoC 热点 + 热压力等级
+    // L2：小卡片 电源 / 磁盘 / 网络
+    private var secondaryTiles: some View {
+        HStack(spacing: 8) {
+            miniCard(title: "电源", value: "外接电源", footnote: "交流电")
+            miniCard(title: "磁盘", value: String(format: "%.1f / %.1f MB/s", m.diskRead, m.diskWrite), footnote: "读 / 写")
+            miniCard(title: "网络", value: String(format: "↓%.0f ↑%.0f KB/s", m.netDown, m.netUp), footnote: "下行 / 上行")
+        }
+    }
+
+    private func miniCard(title: String, value: String, footnote: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 10)).foregroundStyle(t.secondaryText)
+            Text(value)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(t.primaryText)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(footnote).font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9).padding(.vertical, 8)
+        .background(t.card)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.stroke, lineWidth: 1))
+    }
+
+    // L3：核心温度卡（大数字 + SoC 热点 + 热压力等级 + 阈值带）
     private var temperatureCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
@@ -313,6 +400,8 @@ struct PanelView: View {
                 Text("四档 · 不是度数").font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.7))
             }
 
+            thresholdScale
+
             if m.probing {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
@@ -334,7 +423,33 @@ struct PanelView: View {
         }
     }
 
-    // 每核占用：12 条并排迷你曲线，按核型着色
+    // L4：进程 Top 5
+    private var processCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("进程 Top 5").font(.system(size: 10)).foregroundStyle(t.secondaryText)
+                Spacer()
+                Text("仅当前用户 · 只读").font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.7))
+            }
+            ForEach(m.processes) { p in
+                HStack(spacing: 8) {
+                    Text(p.name).font(.system(size: 11)).foregroundStyle(t.primaryText).lineLimit(1)
+                    Spacer()
+                    Text(String(format: "%.1f%%", p.cpu))
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(t.secondaryText)
+                    Text(String(format: "%.0f MB", p.memMB))
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(t.secondaryText.opacity(0.75))
+                        .frame(width: 62, alignment: .trailing)
+                }
+            }
+        }
+        .padding(10)
+        .background(t.card)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.stroke, lineWidth: 1))
+    }
+
+    // L5：每核占用
     private var coreCurves: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("每核占用").font(.system(size: 10)).foregroundStyle(t.secondaryText)
@@ -349,8 +464,7 @@ struct PanelView: View {
 
                     ForEach(kind.indices, id: \.self) { idx in
                         VStack(spacing: 2) {
-                            Sparkline(values: m.histories[idx], color: kind.color)
-                                .frame(height: 22)
+                            Sparkline(values: m.histories[idx], color: kind.color).frame(height: 22)
                             Text(String(format: "%.0f", m.histories[idx].last ?? 0))
                                 .font(.system(size: 8, design: .monospaced))
                                 .foregroundStyle(t.secondaryText.opacity(0.8))
@@ -367,71 +481,7 @@ struct PanelView: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.stroke, lineWidth: 1))
     }
 
-    // v2 区块：GPU / 磁盘 / 网络
-    private var v2Row: some View {
-        HStack(spacing: 8) {
-            miniCard(title: "GPU 占用", value: String(format: "%.0f%%", m.gpuPercent), footnote: "近似值",
-                     bar: m.gpuPercent / 100, barColor: Color(red: 0.60, green: 0.45, blue: 0.95))
-            miniCard(title: "磁盘", value: String(format: "%.1f / %.1f MB/s", m.diskRead, m.diskWrite),
-                     footnote: "读 / 写", bar: nil, barColor: .clear)
-            miniCard(title: "网络", value: String(format: "↓%.0f ↑%.0f KB/s", m.netDown, m.netUp),
-                     footnote: "下行 / 上行", bar: nil, barColor: .clear)
-        }
-    }
-
-    private func miniCard(title: String, value: String, footnote: String, bar: Double?, barColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 10)).foregroundStyle(t.secondaryText)
-            Text(value)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(t.primaryText)
-                .lineLimit(1).minimumScaleFactor(0.7)
-            if let bar = bar {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(t.stroke).frame(height: 4)
-                        Capsule().fill(barColor).frame(width: geo.size.width * CGFloat(bar), height: 4)
-                    }
-                }
-                .frame(height: 4)
-            }
-            Text(footnote).font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 9).padding(.vertical, 8)
-        .background(t.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.stroke, lineWidth: 1))
-    }
-
-    // 进程 Top 5（只读、只显示当前用户的进程）
-    private var processCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("进程 Top 5").font(.system(size: 10)).foregroundStyle(t.secondaryText)
-                Spacer()
-                Text("仅当前用户 · 只读").font(.system(size: 9)).foregroundStyle(t.secondaryText.opacity(0.7))
-            }
-            ForEach(m.processes) { p in
-                HStack(spacing: 8) {
-                    Text(p.name).font(.system(size: 11)).foregroundStyle(t.primaryText)
-                        .lineLimit(1)
-                    Spacer()
-                    Text(String(format: "%.1f%%", p.cpu))
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(t.secondaryText)
-                    Text(String(format: "%.0f MB", p.memMB))
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(t.secondaryText.opacity(0.75))
-                        .frame(width: 62, alignment: .trailing)
-                }
-            }
-        }
-        .padding(10)
-        .background(t.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.stroke, lineWidth: 1))
-    }
-
-    // 温度阈值色带：0–100 °C，80 °C 告警线
+    // 温度阈值色带（属于核心温度卡的一部分）
     private var thresholdScale: some View {
         VStack(alignment: .leading, spacing: 4) {
             GeometryReader { geo in
@@ -462,10 +512,6 @@ struct PanelView: View {
                 Text("100 °C").font(.system(size: 8)).foregroundStyle(t.secondaryText.opacity(0.6))
             }
         }
-        .padding(10)
-        .background(t.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.stroke, lineWidth: 1))
     }
 
     // 仅原型：状态与外观切换器
@@ -529,7 +575,7 @@ struct Sparkline: View {
     }
 }
 
-// MARK: - 窗口外壳（可缩放）
+// MARK: - 窗口外壳（无边框、可拖动、可缩放到任意大小）
 
 @main
 struct PrototypeApp {
@@ -546,8 +592,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 原型用：VITALS_SIZE=560x200 可指定初始尺寸，便于逐档截图
+        var width: CGFloat = 560
+        var height: CGFloat = 200
+        if let spec = ProcessInfo.processInfo.environment["VITALS_SIZE"] {
+            let parts = spec.split(separator: "x").compactMap { Double($0) }
+            if parts.count == 2 { width = parts[0]; height = parts[1] }
+        }
+
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 470, height: 860),
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.borderless, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
@@ -557,7 +611,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.backgroundColor = .clear
         w.isOpaque = false
         w.hasShadow = true
-        w.minSize = NSSize(width: 400, height: 620)
+        w.minSize = NSSize(width: 230, height: 34)      // L0 的最小尺寸
+        w.maxSize = NSSize(width: 4000, height: 3000)
         let hosting = NSHostingView(rootView: PanelView())
         hosting.frame = w.contentLayoutRect
         hosting.autoresizingMask = [.width, .height]
