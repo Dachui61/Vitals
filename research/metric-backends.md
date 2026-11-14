@@ -1,9 +1,9 @@
 # 各指标的采集后端与实测开销
 
 > 票 03 · research · 实测机器：macOS 27.0 (26A425) / Apple M6 Mac mini (Mac18,5) / 12 核 (2 超频 + 4 性能 + 6 能效) / 16 GB RAM / 仅交流电
-> 实测时间：2026-11-14 20:31–20:55 (Asia/Shanghai)
+> 实测时间：2026-11-14 20:31–21:02 (Asia/Shanghai)
 > 全部测量在**无特权**（uid=euid=501）沙箱内完成；未使用 sudo。
-> 可复用代码：`scratch/probe_*.swift`（探针）、`scratch/VitalsMetrics.swift`（可直接抄进 VitalsCore 的实现）
+> 可复用代码：`scratch/VitalsMetrics.swift`（可编译、带自测入口）、`scratch/probe_*.swift`（探针）
 > 原始输出：`scratch/out_*.txt`
 
 术语按 `GLOSSARY.md`：**CPU 占用**、**核型**、**热压力等级**、**近似值**、**不可用**、**后端**、**降级链**、**特权组件**。
@@ -14,9 +14,9 @@
 
 | 指标 | 推荐后端 | 需特权 | 单次开销（实测） | 主要坑 |
 |---|---|---|---|---|
-| CPU 总量 + 每核 | `host_processor_info(PROCESSOR_CPU_LOAD_INFO)` | 否 | **8.23 µs** avg / 5.83 min / 53.08 max | 返回的数组由内核分配，**必须 `vm_deallocate`**，否则每次泄漏 384 B；**tick 比例是 100/s 不是 1000/s**（票面假设有误） |
+| CPU 总量 + 每核 | `host_processor_info(PROCESSOR_CPU_LOAD_INFO)` | 否 | **8.23 µs** avg / 5.83 min / 53.08 max | 返回的数组由内核分配，**必须 `vm_deallocate`**，否则每秒泄漏 384 B；**tick 比例是 100/s 不是 1000/s**（票面假设有误） |
 | CPU 总量（只要总量） | `host_statistics(HOST_CPU_LOAD_INFO)` | 否 | **0.89 µs** avg | 只有聚合值，给不出每核；与每核求和**逐 tick 相等** |
-| 核型（超频/性能/能效） | IODeviceTree `cpus/cpuN@N` 的 `cluster-type` | 否 | 一次读 ≈ 2–4 µs | `hw.perflevelN` 只给**数量**不给**下标**；`hw.perflevelN.l2perflevels`（SDK 有文档）本机**不存在**；`THREAD_AFFINITY_POLICY` 返回 **46 不支持**；`host_processor_sets` 返回 **4 无效** |
+| 核型（超频/性能/能效） | IODeviceTree `cpus/cpuN@N` 的 `cluster-type` | 否 | 启动时读一次（≈µs 级） | `hw.perflevelN` 只给**数量**不给**下标**；`hw.perflevelN.l2perflevels`（SDK 有文档）本机**不存在**；`THREAD_AFFINITY_POLICY` 返回 **46 不支持**；`host_processor_sets` 返回 **4 无效**；设备树节点不在 service plane 里 |
 | 内存（已用/总量） | `host_statistics64(HOST_VM_INFO64)` | 否 | **0.58 µs** avg | “已用”口径要自己拼（App+Wired+Compressed）；macOS 27 新增字段与旧字段**语义不同** |
 | 内存压力等级 | `sysctl kern.memorystatus_vm_pressure_level` | 否 | ≈ 0.6 µs | 值是位掩码（1=normal / 2=warn / 4=critical） |
 | Swap | `sysctl vm.swapusage` | 否 | **0.61 µs** avg | `xsu_total/avail/used` 单位是**字节**不是页；`xsu_pagesize` 别再乘一遍 |
@@ -29,7 +29,8 @@
 | 功耗（mW） | `powermetrics --samplers cpu_power` | **是** | — | 无特权拿不到任何瓦数；`ApplePMPv2` 节点可见但要开 user client（root） |
 | 每进程磁盘 IO | ✗ 无 | — | — | `proc_pid_rusage` 对**所有** pid（含自己的、含 launchd）返回 0；V0/V1/V4 直接在内核里 abort |
 
-**1 Hz 全量采样的实测总开销（v1 全套）**：CPU 8.23 + 内存 0.58 + swap 0.61 + 电源 2.42 ≈ **11.8 µs/次**，相对 1 s 采样周期是 0.0012%。加满 v2（GPU 18.95 + 网络 24.33 + 磁盘 30.26 + 进程全量扫描 889 µs）≈ **0.96 ms/次**，仍可接受，但进程列表建议降频到 2–3 s 一次。
+**1 Hz 全量采样的实测总开销（v1 全套）**：CPU 8.23 + 内存 0.58 + swap 0.61 + 电源 2.42 ≈ **11.8 µs/次**，相对 1 s 采样周期是 0.0012%。
+加满 v2（GPU 18.95 + 网络 24.33 + 磁盘 30.26 + 进程全量扫描 889 µs）≈ **0.96 ms/次**，仍可接受，但进程列表建议降到 2–3 s 一次。
 
 ---
 
@@ -93,16 +94,16 @@ Swift 参数顺序与 C 不同：`host_processor_info(host, flavor, &count, &arr
 
 票面写“`TH_CPU_SCALE` 不暴露，按 1000 处理”。**本机实测是 100/s（1 tick = 10 ms）**，不是 1000。
 
-证据一：连续 10 s 内 12 核全部计数器的增量。
+证据一：连续 10 s 内 12 核全部计数器的增量（`scratch/out_tickscale2.txt`）：
 
 ```
-  wall interval = 10.0009 s
+  sleep(10): wall(Date) = 10.0009 s | mach_absolute_time = 0.2400 s | CLOCK_MONOTONIC_RAW = 10.0008 s
   total tick delta (all cores, all 4 counters) = 11960
   idle tick delta  = 9451, busy tick delta = 2509
   => per-core tick rate (total/(wall*ncpu)) = 99.7 ticks/s   -> implied TH_CPU_SCALE = 100
 ```
 
-证据二：把一个线程钉在单核上死循环 10.00 s，那个核的 user tick 增量：
+证据二：把一个线程钉在单核上死循环 10.00 s，那个核的 user tick 增量（`scratch/out_spin.txt`）：
 
 ```
     core  6: user=   975 sys=    21 idle=     3
@@ -111,7 +112,10 @@ Swift 参数顺序与 C 不同：`host_processor_info(host, flavor, &count, &arr
   => implied TH_CPU_SCALE = 98 ticks/s (if that core was 100% user-busy)
 ```
 
-**为什么坑**：百分比是**比值**，与比例无关，所以“CPU 占用 %”不受影响；但**任何把 tick 换算成 CPU 秒**的地方（每进程 CPU%、每核 CPU 秒、告警阈值里的“持续占用”）都会差 10 倍。**结论：百分比随便算，换算成秒必须自己标定（本机 100/s）。**
+**为什么坑**：百分比是**比值**，与比例无关，所以“CPU 占用 %”不受影响；但**任何把 tick 换算成 CPU 秒**的地方（每进程 CPU%、每核 CPU 秒、告警阈值里的“持续占用”）都会差 10 倍。
+**结论：百分比随便算，换算成秒必须自己标定（本机 100/s）。**
+
+顺带一个同源陷阱：**本机 `mach_absolute_time()` 不是纳秒**（10 s 墙钟只前进 0.24 s，即 24 MHz 时间基）。用它测速会错 41.67 倍。测速统一用 `clock_gettime(CLOCK_MONOTONIC_RAW)` 或 `DispatchTime`。
 
 ### 1.3 两次采样差分算法
 
@@ -133,10 +137,10 @@ busy%  = (Δuser + Δsys + Δnice) / (Δuser + Δsys + Δidle + Δnice)
 ```
 
 坑：
-- 第一次采样没有前值 → 必须显示 **不可用**（或 0，但按 glossary 0 与 不可用 要分开），不能拿单次绝对值当百分比。
+- 第一次采样没有前值 → 必须显示 **不可用**（不能拿单次绝对值当百分比）。
 - `nice` 计入 busy（它在 idle 之外）。
 - 差分必须用**无符号回绕减法** `&-`，因为内核计数器是 `natural_t` 回绕的。
-- 采样间隔若不是整 1 s，占用率仍然是比值，不受影响；但**换算 CPU 秒**要除以真实间隔。
+- 采样间隔若不是整 1 s，占用率仍然是比值、不受影响；但**换算 CPU 秒**要除以真实间隔。
 
 ### 1.4 平滑
 
@@ -158,7 +162,7 @@ busy%  = (Δuser + Δsys + Δnice) / (Δuser + Δsys + Δidle + Δnice)
 
 - 原始 1 Hz 曲线抖得厉害（stdev 6.14 个百分点，第一个样本 38% 直接把曲线打穿）。
 - **EMA(α=0.3)** 约 3 个样本收敛，适合菜单栏读数（但滞后明显：真实值已回落到 18%，EMA 还在 20%）。
-- **3 点滑动平均** 兼顾了跟手与平滑，数值几乎立刻贴住真值（17.8% vs 真值 18.2%）。
+- **3 点滑动平均**兼顾跟手与平滑，数值几乎立刻贴住真值（17.8% vs 真值 18.2%）。
 - **建议**：菜单栏读数用 **ma3**；浮窗曲线用原始值（画的是瞬时形状）或 ma3；**告警阈值判定必须用原始值或 ma3，不能用 EMA**（EMA 的滞后会让“持续 30 s 超 90%”提前/推迟触发）。
 
 ### 1.5 核型（超频 / 性能 / 能效）——本票最难的一块
@@ -234,68 +238,100 @@ busy%  = (Δuser + Δsys + Δnice) / (Δuser + Δsys + Δidle + Δnice)
 2. 剩下 `P`(2) 与 `M`(4) 与 Super(2)、Performance(4) —— **按数量匹配只有一种双射**：`P`(2)↔Super(2)，`M`(4)↔Performance(4)。
 3. **旁证**：设备树里 `P` 与 `M` 的 6 个核 `l2-cache-id` 全为 0、`l2-cache-size` 全为 0x4001（同一个 L2 域），而 6 个 `E` 核的 `l2-cache-size` 是 0x8000（另一个域）；这正好对应 `sharesl2` —— Super 与 Performance 共享 L2、Efficiency 独占。
 
-**代码（`scratch/VitalsMetrics.swift` 里有完整版）**
+**代码（`scratch/VitalsMetrics.swift` 有完整可编译版，实测输出见文末）**
 
 ```swift
+import Foundation      // ← 必须：没有它就没有 String → CFString 的桥接
 import IOKit
 
-/// 从 IODeviceTree 读出「逻辑核下标 → 核型」。
-/// cluster-type 是 Apple 内部取值，未公开；这里靠「数量匹配」映射到 sysctl 的命名 perflevel。
-enum CoreKind: String { case superCore = "超频核", perfCore = "性能核", effCore = "能效核" }
-
-struct CoreTopology {
-    var kindOfLogicalCPU: [CoreKind]   // 下标 = host_processor_info 的数组下标
-    var perfLevelCounts: [String: Int] // "Super": 2, "Performance": 4, "Efficiency": 6
+enum CoreKind: String {
+    case superCore = "超频核"     // hw.perflevel0 "Super"
+    case perfCore  = "性能核"     // hw.perflevel1 "Performance"
+    case effCore   = "能效核"     // hw.perflevel2 "Efficiency"
 }
 
-func readCoreTopology() -> CoreTopology? {
+static func readCoreTopology() -> CoreTopology? {
     // 1) sysctl 拿命名与数量
-    var counts: [String: Int] = [:]
-    var levels = 0
-    var v: Int = 0; var sz = MemoryLayout<Int>.size
-    guard sysctlbyname("hw.nperflevels", &v, &sz, nil, 0) == 0 else { return nil }
-    levels = v
     var namedLevels: [(name: String, count: Int)] = []
-    for l in 0..<levels {
-        var c = 0; sz = MemoryLayout<Int>.size
-        guard sysctlbyname("hw.perflevel\(l).logicalcpu", &c, &sz, nil, 0) == 0 else { continue }
-        let name = (sysctlString("hw.perflevel\(l).name") ?? "?")
-        namedLevels.append((name, c))
-        counts[name] = c
+    guard let nLevels = vitalsSysctlInt("hw.nperflevels"), nLevels > 0 else { return nil }
+    for l in 0..<nLevels {
+        guard let c = vitalsSysctlInt("hw.perflevel\(l).logicalcpu"),
+              let n = vitalsSysctlString("hw.perflevel\(l).name") else { return nil }
+        namedLevels.append((n, c))
     }
+
     // 2) 设备树拿每核 cluster-type
-    guard let cpus = IORegistryEntryFromPath(kIOMainPortDefault, "IODeviceTree:/cpus"), cpus != 0 else { return nil }
-    var byType: [String: [Int]] = [:]      // "E"/"P"/"M" -> 逻辑核下标数组
-    var children: [io_service_t] = []
-    var it: io_iterator_t = 0
-    if let m = IOServiceMatching("IOPlatformDevice") {
-        _ = IOServiceGetMatchingServices(kIOMainPortDefault, m, &it)
-        while true {
-            let e = IOIteratorNext(it); if e == 0 { break }
-            var parent = io_registry_entry_t(0)
-            if IORegistryEntryGetParentEntry(e, kIODeviceTreePlane, &parent) == KERN_SUCCESS {
-                if parent == cpus { children.append(e) } else { IOObjectRelease(parent) }
-            }
-            IOObjectRelease(e)
-        }
-        IOObjectRelease(it)
+    //    ⚠️ 设备树节点不在 kIOServicePlane 里！用 IOServiceMatching("IOPlatformDevice")
+    //    配合 IOServiceGetMatchingServices【找不到 cpuN@N】，必须显式遍历 IODeviceTree plane。
+    let cpus = IORegistryEntryFromPath(kIOMainPortDefault, "IODeviceTree:/cpus")
+    guard cpus != 0 else { return nil }
+    var byType: [String: [Int]] = [:]
+    var iter: io_iterator_t = 0
+    let kr = "IODeviceTree".withCString { plane in
+        IORegistryEntryCreateIterator(cpus, plane, UInt32(kIORegistryIterateRecursively), &iter)
     }
-    for c in children {
-        if let t = ioregString(c, "cluster-type"),
-           let id = ioregInt(c, "logical-cpu-id") {
-            byType[t, default: []].append(Int(id))
-        }
-        IOObjectRelease(c)
+    guard kr == KERN_SUCCESS else { return nil }
+    while true {
+        let e = IOIteratorNext(iter)          // IORegistryIterator 是 IOIterator 的子类
+        if e == 0 { break }
+        defer { IOObjectRelease(e) }
+        guard let type = ioregString(e, "cluster-type"),
+              let id = ioregInt(e, "logical-cpu-id") else { continue }
+        byType[type, default: []].append(Int(id))
     }
-    // 3) 数量匹配：Efficiency 6 -> "E" 6；剩下的按数量唯一配对
-    //    "P"(2) 配 Super(2)，"M"(4) 配 Performance(4)
+    guard !byType.isEmpty else { return nil }
+
+    // 3) 数量匹配：Efficiency(6)↔"E"(6)；剩下按数量唯一配对 → "P"(2)↔Super(2)、"M"(4)↔Performance(4)
     ...
 }
 ```
 
+**三个实现坑**：
+
+1. `IOServiceMatching("IOPlatformDevice")` + `IOServiceGetMatchingServices` **找不到 `cpuN@N`** —— 这些节点只在 IODeviceTree plane 里。要用 `IORegistryEntryCreateIterator(entry, "IODeviceTree", kIORegistryIterateRecursively, &iter)` + `IOIteratorNext`。
+2. `cluster-type` 读回来是 **CFData（2 字节 `"E\0"`）而不是 CFString**，要自己按字节解码。
+3. `IORegistryEntryFromPath(kIOMainPortDefault, "IODeviceTree:")` 返回 0，**要写 `"IODeviceTree:/cpus"`**（带子路径）。
+
+实测遍历结果（12 个条目，顺序即逻辑核下标）：
+
+```
+  entry  1..6: cluster-type={length = 2, bytes = 0x4500}   // "E"
+  entry  7..8: cluster-type={length = 2, bytes = 0x5000}   // "P"
+  entry 9..12: cluster-type={length = 2, bytes = 0x4d00}   // "M"
+  total entries walked: 12
+```
+
+`scratch/probe_cputree.swift` 的完整输出（同一套结论的独立复现）：
+
+```
+  hw.nperflevels = 3
+  hw.perflevel0 = Super logicalcpu=2
+  hw.perflevel1 = Performance logicalcpu=4
+  hw.perflevel2 = Efficiency logicalcpu=6
+  hw.perflevel0.l2perflevels = <不存在>
+  hw.perflevel1.l2perflevels = <不存在>
+  hw.perflevel2.l2perflevels = <不存在>
+  --- 设备树 cpus 节点 ---
+  IODeviceTree:/cpus ok
+  max_cpus = 12
+  cpu-cluster-count = 2
+  p-core-count = 6
+  e-core-count = 6
+  --- 逐核 cluster-type（遍历顺序即逻辑核下标） ---
+  logical-cpu-id=0..5   cluster-type=E
+  logical-cpu-id=6,7    cluster-type=P
+  logical-cpu-id=8..11  cluster-type=M
+
+  按 cluster-type 归组：
+    E: [0, 1, 2, 3, 4, 5]  (6 个)
+    M: [8, 9, 10, 11]  (4 个)
+    P: [6, 7]  (2 个)
+  数量匹配：Efficiency(6)↔"E"(6)；剩下按数量唯一配对 → "P"(2)↔Super(2)、"M"(4)↔Performance(4)
+```
+
 #### 想用“跑得慢/快”来反推核型？实测不可靠
 
-背景负载下各核占用（后台减去后测的吞吐）：
+后台负载下各核占用（后台减去后测的吞吐，`scratch/out_coretype2.txt`、`out_coretype3.txt`）：
 
 ```
   core  0 (E): bg 38.9 ticks/s   core  6 (P): bg 54.4   core  8 (M): bg  3.0
@@ -303,9 +339,9 @@ func readCoreTopology() -> CoreTopology? {
   core  2 (E): bg 27.6           core  8..11 (M): bg 1.5–3.0
 ```
 
-- `P` 簇（6/7）长期 ~54%，`M` 簇（8–11）只有 1–3%，`E` 簇（0–5）6–39%：**调度器确实优先用快的核**（6/7），这与「P=Super」一致。
+- `P` 簇（6/7）长期 ~54%，`M` 簇（8–11）只有 1–3%：**调度器确实优先用快的核**，这与「P=Super」一致。
 - 但纯标量吞吐**分不开 P 与 M**：`P` 簇最好 1.122e9 mul/s vs `M` 簇最好 1.099e9 mul/s，只差 2%；SIMD 测下来 11.32e12 vs 11.11e12，同样只有 1–3%。
-- 而且测量本身不稳：260 次 220 ms 窗口只成功归属了 260 次里的少数几次；`E` 簇一次都没被采样线程跑到（调度器不放它去）。
+- 而且测量本身不稳：260 次 220 ms 窗口里能成功归属的只有少数几次；`E` 簇一次都没被采样线程跑到（调度器不放它去）。
 - **结论：不要用基准测试反推核型**，用设备树的 `cluster-type` + 数量匹配。
 
 ### 1.6 CPU 备选方案与坑
@@ -367,7 +403,7 @@ func readCoreTopology() -> CoreTopology? {
 
 **推荐 A 口径**：`已用 = (active_internal + inactive_internal − purgeable) + wire + compressor_page_count`，也就是 **App Memory + Wired + Compressed**，与活动监视器的「内存使用」口径一致。
 
-**菜单栏显示**：按 GLOSSARY 的「内存%」，建议直接用 **A / total = 10.16 / 16.00 = 63%**。菜单栏里「内存 63%」对应的是「App+Wired+Compressed 占物理内存的比例」；如果菜单栏想表达“还剩多少可用”，那是 `B`（85%）——**两个数不能混用**，界面上要写清楚是「已用」。
+**菜单栏显示**：按 GLOSSARY 的「内存%」，建议直接用 **A / total = 10.16 / 16.00 = 63%**（菜单栏「内存 63%」= App+Wired+Compressed 占物理内存的比例）。如果菜单栏想表达“还剩多少可用”，那是 **B**（85%）——**两个数不能混用**，界面上要写清楚是「已用」还是「可用」。
 
 ### 2.3 macOS 27 的新字段（坑）
 
@@ -407,7 +443,7 @@ func readCoreTopology() -> CoreTopology? {
 | `vm_stat` / `top -l 1` fork | ❌ 不必要 | fork 成本 70 ms+ |
 | `memory_pressure -Q` fork | ❌ 不必要 | 同样能 sysctl 拿到 |
 
-**坑**：设备树/SDK 与运行内核的结构体大小可能不一致 —— 用 SDK 头文件大小去 `host_statistics64` 会让内核写超界而段错误。本机实测一致（104 naturals = 416 B），但**代码里应该按 4 KiB 对齐的大缓冲读，再自己解释前 N 个字段**（`scratch/probe_mem.swift` 里的 `readVM()` 就是这么写的）。
+**坑**：设备树/SDK 与运行内核的结构体大小可能不一致 —— 用 SDK 头文件大小去 `host_statistics64` 会让内核写超界而段错误。本机实测一致（104 naturals = 416 B），但**代码里应该按 4 KiB 对齐的大缓冲读，再自己解释前 N 个字段**（`scratch/probe_mem.swift` 的 `readVM()` 就是这么写的）。
 
 ---
 
@@ -416,16 +452,16 @@ func readCoreTopology() -> CoreTopology? {
 ### 3.1 节点：只有一个
 
 ```
-  IOServiceMatching("IOAccelerator")     -> kr=0 count=1 AGXAcceleratorG18G@d07
-  IOServiceMatching("AGXAccelerator")    -> kr=0 count=1 AGXAcceleratorG18G@d0f
-  IOServiceMatching("AGXAcceleratorG18G")-> kr=0 count=1 AGXAcceleratorG18G@d17
-  IOServiceMatching("IOGPU")              -> kr=0 count=1 AGXAcceleratorG18G@d1f
-  IOServiceMatching("IOGraphicsDevice")  -> kr=0 count=0
+  IOServiceMatching("IOAccelerator")      -> kr=0 count=1 AGXAcceleratorG18G@d07
+  IOServiceMatching("AGXAccelerator")     -> kr=0 count=1 AGXAcceleratorG18G@d0f
+  IOServiceMatching("AGXAcceleratorG18G") -> kr=0 count=1 AGXAcceleratorG18G@d17
+  IOServiceMatching("IOGPU")               -> kr=0 count=1 AGXAcceleratorG18G@d1f
+  IOServiceMatching("IOGraphicsDevice")   -> kr=0 count=0
 ```
 
 路径：`IOService:/AppleARMPE/arm-io@10F00000/AppleSoCIOPSD/sgx@80000000/AGXAcceleratorG18G`
 
-**用 `IOServiceMatching("IOAccelerator")` 就行**，它会按继承关系匹配到 `AGXAcceleratorG18G`（票面假设正确）。**不需要硬编码 `AGXAcceleratorG18G`**（换芯片会变）。
+**用 `IOServiceMatching("IOAccelerator")` 就行**，它会按继承关系匹配到 `AGXAcceleratorG18G`（票面假设正确）。**不要硬编码 `AGXAcceleratorG18G`**（换芯片会变）。
 
 ### 3.2 PerformanceStatistics 的内容与稳定性
 
@@ -472,7 +508,7 @@ func readCoreTopology() -> CoreTopology? {
 ### 3.3 开销
 
 ```
-  IORegistryEntryCreateCFProperty(PerfStats) avg=  18.954 us  min= 17.625 us  max=  86.583 us  p50=  18.084 us
+  IORegistryEntryCreateCFProperty(PerfStats) avg=  18.954 us  min=  17.625 us  max=  86.583 us  p50=  18.084 us
   IORegistryEntryCreateCFProperty(model)    avg=   2.168 us  min=   1.875 us  max=   6.583 us  p50=   2.083 us
   IOServiceMatching + iterate (no cache)    avg=   3.016 us  min=   2.791 us  max=  19.459 us  p50=   2.917 us
 ```
@@ -488,7 +524,6 @@ func readCoreTopology() -> CoreTopology? {
   AGX property 'Alloc VRAM'   = nil
   AGX property 'vramSize'     = nil
   AGX property 'VRAMSize'     = nil
-  AGX property 'Allocated PB Size' = nil     # 这两个只存在于 PerformanceStatistics 里
   PerfStats 'Alloc system memory'            = 10113613824   (9.42 GiB)
   PerfStats 'In use system memory'           = 812154880     (0.76 GiB)
   PerfStats 'In use system memory (driver)'  = 0
@@ -542,7 +577,7 @@ Metal 侧：
 
 - 这些是**自开机以来的累计值**，做 1 s 差分即得速率（和 `host_processor_info` 同一套思路）。
 - 4 个节点里：2 个是真实 NVMe 盘（本机 4 块盘：disk0/disk4/disk5/disk6），另外 2 个是**磁盘映像**（`IODiskImageBlockStorageDevice`）。**要挑对节点**，否则会把磁盘映像的 IO 算进去。
-- `IOBlockStorageDevice` 层**没有** Statistics 属性（实测 "no statistics property"），必须用 `IOBlockStorageDriver`。
+- `IOBlockStorageDevice` 层**没有** Statistics 属性（实测 “no statistics property”），必须用 `IOBlockStorageDriver`。
 - **开销**：读 4 个节点的 Statistics = **avg 30.26 µs / p50 26.50 µs**。
 
 ### 4.2 其他候选
@@ -564,7 +599,7 @@ Metal 侧：
 磁盘写速率 = Σ(所有真实 IOBlockStorageDriver 节点) ΔBytes(Write) / Δt
 ```
 
-- 采样时把 4 个节点的 `Statistics` 都读一遍（30 µs），排除掉 `IODiskImageBlockStorageDevice` 类型的映像盘。
+- 采样时把节点的 `Statistics` 都读一遍（30 µs），排除掉 `IODiskImageBlockStorageDevice` 类型的映像盘。
 - 计数器是 64 位，**不回绕**，差分用普通减法即可。
 - 这不是“近似值”——它就是磁盘控制器报告的实际字节数；但它是**设备级**的，包含文件系统缓存写回，不等于“用户进程的 IO”。界面文案建议写「磁盘读写（系统盘）」。
 
@@ -607,7 +642,8 @@ Metal 侧：
 3. 差分：`Δbytes` 用无符号回绕减法 `&-`（32 位），再除以真实间隔。
 
 ```swift
-func networkBytes(previous: (rx: UInt64, tx: UInt64), now: (rx: UInt64, tx: UInt64)) -> (rx: UInt64, tx: UInt64) {
+func networkDelta(previous: (rx: UInt64, tx: UInt64),
+                   now: (rx: UInt64, tx: UInt64)) -> (rx: UInt64, tx: UInt64) {
     (rx: now.rx &- previous.rx, tx: now.tx &- previous.tx)   // 32 位计数器回绕
 }
 ```
@@ -773,6 +809,7 @@ func networkBytes(previous: (rx: UInt64, tx: UInt64), now: (rx: UInt64, tx: UInt
 | **「用 affinity 把线程绑到某核」** | 本机不支持（返回 46），且本来只是 hint → 放弃 |
 | **`hw.perflevelN.l2perflevels`（下标位图）** | SDK 有文档但本机**没有这个 oid** → 改用设备树 `cluster-type` |
 | **fork `iostat` / `netstat` / `pmset` / `memory_pressure` / `top`** | 全部不必要：IOKit/sysctl 都有更快更稳的替代。唯一保留的 fork 场景是功耗（`powermetrics`，且走特权组件） |
+| **`mach_absolute_time()` 当纳秒用** | 本机是 24 MHz 时间基，测速会错 41.67 倍 → 改用 `clock_gettime(CLOCK_MONOTONIC_RAW)` |
 
 ---
 
@@ -782,7 +819,7 @@ func networkBytes(previous: (rx: UInt64, tx: UInt64), now: (rx: UInt64, tx: UInt
 2. **`sysctl NET_RT_IFLIST2` 的正确 mib 形式**。本次用 `[CTL_NET, PF_ROUTE, 6, 0]` 返回 0 条；`netstat -ibn` 能拿到 64 位 `if_data64`（`lo0` Ibytes = 24,451,215,274），说明内核有这条路。如果要 64 位计数器（避免 32 位回绕的麻烦），值得再试。
 3. **GPU 利用率掉 0 的机制**。目前只知道「约每 250 ms 整组归零」，不知道是驱动更新周期还是「本周期无新提交」。取最大值是权宜之计；如果驱动是按提交批次刷新的，也许读 `AGXGPURawCounter` 原始计数器能拿到更连续的数据（私有路径，风险高）。
 4. **磁盘节点筛选规则**。本机 4 个 `IOBlockStorageDriver` 里 2 个是磁盘映像。判据应该用父节点类名（`IODiskImageBlockStorageDevice`）还是 `Statistics` 里的盘符？多盘场景下界面怎么表达（合计 or 分盘）？
-5. **设备树 `cluster-type` 的稳定性**。`E`/`P`/`M` 是 Apple 内部取值、无公开文档，且 Apple Silicon 的簇构成会随芯片变（Apple Silicon 的簇构成会随芯片变）。**必须做能力探测 + 数量匹配 + 失败降级**，并且在核型数量与 `hw.perflevelN` 对不上时**整体退化为“不分组”**，而不是显示错误的分组。
+5. **设备树 `cluster-type` 的稳定性**。`E`/`P`/`M` 是 Apple 内部取值、无公开文档，且簇构成会随芯片变。**必须做能力探测 + 数量匹配 + 失败降级**，并且在核型数量与 `hw.perflevelN` 对不上时**整体退化为“不分组”**，而不是显示错误的分组。
 6. **「Super」这个名字**。本机 `hw.perflevel0.name` = "Super"，GLOSSARY 里叫「超频核」。设备树那边叫 `P`（2 个）。这个字母与 Apple 内部命名的对应关系没有公开文档，我们只是靠数量唯一配对得出 —— 换一台机器（比如 perflevel 数量不是 3，或者 P/M 数量和 Super/Performance 不匹配）时，这条推导就不成立了，需要有兜底。
 7. **本沙箱的 fork 成本被放大了**（`/usr/bin/true` 68.6 ms，真机通常 2–5 ms）。所有“fork 方案”的成本结论在真机上要重新量一遍；不过结论方向不会变（IOKit/sysctl 依然远优于 fork）。
 8. **`mach_absolute_time()` 的时间基**。本机它**不是纳秒**（10 s 墙钟只前进 0.24 s，即 24 MHz 时间基）。如果代码里拿它当纳秒用，测速会错 41.67 倍。用 `clock_gettime(CLOCK_MONOTONIC_RAW)` 或 `DispatchTime`。
@@ -790,15 +827,15 @@ func networkBytes(previous: (rx: UInt64, tx: UInt64), now: (rx: UInt64, tx: UInt
 
 ---
 
-## 附：可复用代码位置
+## 附录 A：可复用代码与原始输出
 
 | 文件 | 内容 |
 |---|---|
-| `scratch/VitalsMetrics.swift` | 各指标后端的可抄实现（CPU / 内存 / GPU / 磁盘 / 网络 / 进程 / 电源 / 核型） |
+| `scratch/VitalsMetrics.swift` | 各指标后端的可抄实现（CPU / 内存 / GPU / 磁盘 / 网络 / 进程 / 电源 / 核型），带 `@main` 自测入口 |
 | `scratch/probe_cpu.swift` | CPU 后端探针（差分、平滑、processor_set、affinity） |
 | `scratch/probe_tickscale.swift` / `probe_tickscale2.swift` | tick 比例标定（结论：100/s） |
 | `scratch/probe_spin.swift` / `probe_coretype2.swift` / `probe_coretype3.swift` | 核型反推实验（结论：基准测试分不开，改用设备树） |
-| `scratch/probe_cputree.swift` | 设备树 `cluster-type` 提取（**推荐用这个**） |
+| `scratch/probe_cputree.swift` | 设备树 `cluster-type` 提取 |
 | `scratch/probe_mem.swift` | 内存 / swap / 压力 |
 | `scratch/probe_gpu.swift` | GPU 占用 + GPU 内存 + Metal |
 | `scratch/probe_disk_power.swift` | 磁盘统计 + 电源 |
@@ -810,8 +847,54 @@ func networkBytes(previous: (rx: UInt64, tx: UInt64), now: (rx: UInt64, tx: UInt
 编译方式（本机只有 Command Line Tools）：
 
 ```bash
-swiftc -swift-version 5 -O \
+swiftc -swift-version 5 -O -parse-as-library \
   -module-cache-path "$PWD/.modulecache" -Xcc -fmodules-cache-path="$PWD/.modulecache" \
-  -o scratch/bin/probe_cpu scratch/probe_cpu.swift \
+  -o scratch/bin/VitalsMetrics scratch/VitalsMetrics.swift \
   -framework IOKit -framework Metal -framework Network
+```
+
+## 附录 B：`scratch/VitalsMetrics.swift` 自测输出（2026-11-14 21:02）
+
+```
+=== 核型 ===
+  逻辑核 0 -> 能效核
+  逻辑核 1 -> 能效核
+  逻辑核 2 -> 能效核
+  逻辑核 3 -> 能效核
+  逻辑核 4 -> 能效核
+  逻辑核 5 -> 能效核
+  逻辑核 6 -> 超频核
+  逻辑核 7 -> 超频核
+  逻辑核 8 -> 性能核
+  逻辑核 9 -> 性能核
+  逻辑核 10 -> 性能核
+  逻辑核 11 -> 性能核
+  perflevel 计数: [(name: "Super", count: 2), (name: "Performance", count: 4), (name: "Efficiency", count: 6)]
+
+=== CPU ===
+  总量 busy=21.58%  每核=43 47 42 22 19 21 34 26 3 2 1 0
+
+=== 内存 ===
+  已用 10.72 GiB / 16.00 GiB (67.0%)  app=4.97 wired=3.02 compressed=2.73
+  swap 7158 MiB / 8192 MiB  压力等级=1
+
+=== GPU ===
+  device=32% renderer=32% tiler=7%  GPU 占用系统内存=0.72 GiB（划给 GPU=9.43 GiB）
+
+=== 磁盘 ===
+  读 0.0 KB/s  写 0.0 KB/s
+
+=== 网络 ===
+  en1  收 1556.4 KB/s  发 183.1 KB/s
+
+=== 进程（当前用户） ===
+  446 个进程；前 5 个按 RSS：
+    pid=23095 DeepSeek Harnes rss=671.7 MiB uid=501
+    pid=3430 TencentMeeting rss=436.6 MiB uid=501
+    pid=4588 com.apple.WebKi rss=319.1 MiB uid=501
+    pid=3189 com.apple.WebKi rss=303.2 MiB uid=501
+    pid=46006 steamwebhelper. rss=290.0 MiB uid=501
+
+=== 电源 ===
+  状态=交流电  充电中=false  有电源源列表=false
 ```
