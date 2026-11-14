@@ -9,6 +9,7 @@ Effort: vitals
 
 - 领域：macOS 系统级监控（个人自用工具）。每个会话先读 domain-modeling；涉及"该长什么样"用 prototype；需要拍板用 grilling。
 - **平台事实（本机实测，已确认）**：macOS 27.0(26A425) / Apple M6 Mac mini (Mac18,5) / 12 核（2 超频 + 4 性能 + 6 能效）/ 16GB RAM / 仅交流电、无电池；只有 Xcode Command Line Tools（无完整 Xcode），`swiftc` 可直接编译并手工打包 .app（`LSUIElement=true` 即不进 Dock）。
+- **温度键（票 23 定案）**：主用 `Tp0j`（CPU die，推断），降级链 `Tp0j → Tp0g → Tp09 → Tp07 → Tp0b → Tp05 → Tp0m → Tp0L`；**排除** `Tg*`（GPU 侧）、`TVD0/TVDC/TVDP/TCMb`（SoC 封装热点，整机最热但不是 CPU die）、`TH0x/TH0a/TH0b/TMVR`（环境/板级，**票 01 曾误列为候选**——CPU 负载下不动，Apple Silicon 上很多第三方工具默认用它，恰好是错的）。置信度中高但属负载相关性推断，**无法交叉验证**（powermetrics 只给压力等级），所以"近似值"标注是长期事实。libSMC 支持全量枚举 `_SMCGetKeyFromIndex`（2066 键，温度键 index 556–703）。
 - **采集后端（票 03 实测，v1 全套 1 Hz 约 11.8 µs）**：CPU 每核 `host_processor_info`（8.23 µs，**必须 `vm_deallocate`**，**tick 比例是 100/s 不是 1000/s**）；核型 = 设备树 `cluster-type`（**E=0–5 能效、P=6–7 超频、M=8–11 性能**，L2 拓扑佐证）；内存 `host_statistics64(HOST_VM_INFO64)`（已用 = (active+inactive−purgeable)+wire+compressed，**别用 total−free−speculative**）；内存压力 `kern.memorystatus_vm_pressure_level`；swap `vm.swapusage`（单位是字节）；电源 `AppleSmartBattery` 两个属性（2.42 µs，**别 fork pmset**）；GPU 占用 = `AGXAccelerator` 的 `PerformanceStatistics`（**每 ~250 ms 掉 0**，连读 3 次取最大）；磁盘/网络 = 累计计数器差分（网络**必须排除 lo0**）；进程 = libproc（**天然只返回当前用户的进程**）。
 - **可用数据源（无特权）**：`host_processor_info` 每核 CPU；`AGXAccelerator` → `PerformanceStatistics` 的 Device/Renderer/Tiler Utilization %（GPU 占用）；`ProcessInfo.thermalState` 四档热压力；**`/usr/lib/libSMC.dylib`（macOS 27 的经典 SMC 继任者）→ `SMCOpenConnectionWithDefaultService` / `SMCReadKeyAsNumeric` / `SMCGetKeyInfo`，能读出数值温度（实测 Tp05≈54–59 °C、Tp09≈56–66 °C，4×`yes` 压测后 Tp05 +10.9 °C；单次读 ~100 µs；键打包是**大端**，与票 20 的 IOKit 端点低字节序不同）**；pmset 电源状态。
 - **不可用数据源**：经典 SMC 读键路径已死（`AppleSMCUserClient` 不存在）；**IOReportHub 没有 CPU die 温度通道**（8450 个通道 0 命中，且原始样本缓冲区在本机被 KERN_NO_SPACE 挡住——Apple 自己的 reader 也拉不到值）；**macOS 27 的 `powermetrics` 没有 smc sampler**（参数解析期即拒、exit 64；arm64e 二进制里 `smc`/`temperatur` 字节计数为 0），root 也拿不到 die 温度；GPU 温度无任何公开路径；`IOPerformance.framework` 已从 macOS 27 的 dyld 缓存移除（实现搬到 `/usr/lib/libIOReport.dylib`，但它给不了温度）。
@@ -28,6 +29,7 @@ Effort: vitals
 - [还有没有别的数值温度通道](issues/20-other-temperature-channels-research.md): 穷举了 thermalmonitord 与其它表面；当时结论"无特权无 °C 通道"已被票 01 推翻——真正可用的是 libSMC。保留价值在于它还原了 168 字节 SMC IOKit 协议（现已无用武之地，存档）。
 - [要不要为"功耗"装一个特权组件](issues/21-privileged-component-scope-grilling.md): 不装——温度已能免特权读到，功耗不值得换常驻 root 守护进程；项目因此不引入任何特权组件。同轮定下：接受私有 libSMC（须能力探测 + 自动降级）、推断出的温度读数标"近似值" + 传感器名、热压力等级独立成行不叫"温度"。
 - [各指标的采集后端与实测开销](issues/03-metric-backends-research.md): v1 全套 1 Hz 约 11.8 µs，全部无特权；核型映射定案（E=能效 0–5 / P=超频 6–7 / M=性能 8–11）；三处坑已定案（tick 比例 100/s、内存"已用"口径、fork 子进程一律禁止）；"显存"改称"GPU 占用系统内存"。
+- [哪个 SMC 键才是 CPU die 温度](issues/23-smc-key-identification-research.md): 主用 `Tp0j`，降级链 `Tp0g → Tp09 → Tp07 → Tp0b → Tp05 → Tp0m → Tp0L`；`Tg*` 是 GPU、`TVD*` 是 SoC 热点、`TH0x` 一族是环境温度（票 01 误列为候选）；置信度中高但属推断，无法交叉验证 → 界面标"近似值"+ 传感器名。
 
 ## Not yet specified
 

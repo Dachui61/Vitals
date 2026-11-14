@@ -16,6 +16,9 @@ Blocked by: 04, 08
 - **不要**走 IOReportHub 路线：票 01 已证明 macOS 27 的 IOReport 通道空间里没有 CPU die 温度通道，且原始样本缓冲区在本机被 KERN_NO_SPACE 挡住。
 - 能力探测要覆盖：dlopen(`/usr/lib/libSMC.dylib`) 失败、符号缺失、连接打开失败、键不存在（rc=-3）、读值越界（不在合理温度区间）——任一情况都要能干净地退到 thermalState 四档，并让界面同步显示"不可用 + 原因"。
 - 读数若属"推断"出的 CPU die 键，要按 GLOSSARY 带上**近似值**标记与**传感器名**（票 04 定的规则）。
+- **主键与降级链（票 23 定案）**：主用 `Tp0j`；降级顺序 `Tp0j → Tp0g → Tp09 → Tp07 → Tp0b → Tp05 → Tp0m → Tp0L`。**不要**用 `TH0x`/`TH0a`/`TH0b`/`TMVR`（环境/板级，CPU 负载下不动）；**不要**用 `Tg*`（GPU 侧）；**不要**用 `TVD0/TVDC/TVDP/TCMb`（SoC 封装热点，不是 CPU die）。
+- libSMC 支持**全量枚举**：`_SMCGetKeyFromIndex(conn, index, &outKey)`（可复用 `scratch/smc_keys.swift`），本机 2066 键，温度键在 index 556–703。探针策略按票 04 的结论实现。
+- 键名在各机型上会变 → 读到的键名要原样带进界面（如「SMC Tp0j」），不要硬编码成"CPU 温度"了事。
 - 能力探测：启动时与运行期判断后端可用性（IOReportHub 通道是否存在 / helper 是否在跑 / socket 是否可连），探测失败要能自动降级到 thermalState 四档并让界面同步更新。
 - 传感器名：展示实际读到的传感器名；多候选键时按 04 定的优先级选择。
 - 可信度标注：无特权近似的读数必须带"近似"标记；特权读数标注来源。
