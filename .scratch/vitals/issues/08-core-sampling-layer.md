@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 03, 06, 07
 
 # 核心采样层实现与单元测试
@@ -25,3 +25,47 @@ Blocked by: 03, 06, 07
 约束：采样层不 import SwiftUI，不碰 UIKit/AppKit；**不得 fork 子进程**取数（实测 fork `iostat` 1075 ms、`pmset` 76 ms，1 Hz 完全不可接受）。
 
 产出：实现代码 + 测试 + 每个采集后端的一页说明（数据来源、刷新代价、已知坑）。
+
+## Answer
+
+**核心采样层已实现并在本机跑通**（真机读数见下方 live 检查输出）。24 个单元测试全过。
+
+实现（`Sources/VitalsCore/Sampling/`）：
+
+- `CPUSampling.swift` —— `MachCPUSampler`（`host_processor_info`，**必须 `vm_deallocate`**）、`CPUBusyCalculator`（纯逻辑）、`CPUBusyTracker`（维护差分基准）、`CPUProviderImpl`。
+- `CoreTopology.swift` —— 设备树 `cluster-type` → 核型映射（数量唯一配对），**匹配不上就返回 nil → 不分组，绝不猜**。
+- `MemorySampling.swift` —— 内存 + 内存压力 + swap。
+- `PowerSampling.swift` —— `AppleSmartBattery` 供电状态 + `ProcessInfo.thermalState`。
+- `SMCSession.swift` / `TemperatureSampling.swift` —— 温度后端（见票 09）。
+- `History.swift` —— `RingBuffer`、`MovingAverage3`、`HistoryStore`（60 秒曲线 + 10 分钟粗粒度）。
+- `MetricsEngine.swift` —— 1 Hz tick，产出快照 + 历史。
+
+### ⚠️ 内存口径修正（票 03 的结论要改）
+
+票 03 报的"已用 = (active_internal + inactive_internal − purgeable) + wire + compressed = 10.16/16 GiB"**是错的**，两个原因叠加：
+
+1. **`host_statistics64` 返回的长度不可靠**：同一个二进制里，独立编译的进程拿到 104 个 4 字节整数（正好填满 416 字节的 `vm_statistics64`），而 **SwiftPM 构建出来的进程只拿到 40 个**（160 字节）——结构体后半段（`external_page_count` / `internal_page_count` / `active_internal_count` / `inactive_internal_count`）全是 0。照返回长度拷贝会**静默少读一大半字段**。
+2. 即使字段都读到了，`active_internal` / `inactive_internal` 也是"内部页"，不是活动监视器口径。
+
+本机实测对照（`vm_stat` 逐项确认 + `top -l 1` 交叉验证）：
+
+- **已用内存 = (active + inactive − purgeable) + wired + compressed = 14.6 / 16.0 GB**，与 `top` 的 `PhysMem: 15G used` 一致（top 取整）。
+- 与**活动监视器的「Memory Used」（约 10 GB）不是同一个口径** —— 后者不含 file-backed。菜单栏与悬浮窗显示的是前者（系统"正在被用掉的物理内存"）。
+- 现在实现**只用经验验证过的原始整数下标**（active=1、inactive=2、wired=3、purgeable=22、speculative=23、compressor=32），并对每个值做"不超过总页数"的合理性校验；校验不过就报「不可用」，不显示 0。
+- 修之前应用显示 4.9 GB（错），修之后 14.6 GB（对）。
+
+### 真机读数（live 检查）
+
+```
+核型映射: 超频核=6,7  性能核=8,9,10,11  能效核=0,1,2,3,4,5
+CPU: 总 0.9%  每核 5/3/2/0/0/0/1/0/0/0/0/0
+核心温度: 42.2 °C  来源 SMC Tp0j  可信度 近似值
+SoC 热点: 50.3 °C (SMC TVD0)
+内存: 14.7 / 16.0 GB (92%)  压力 正常  swap 7073 MB
+电源: 外接电源
+热压力等级: 正常
+```
+
+单元测试（`scripts/test.sh`，24 个用例）覆盖：CPU 差分（idle 之外算忙、nice 算忙、**计数回绕判为不可比**、核数不一致不可比）、tick 比例 100/s、环形缓冲淘汰、3 点滑动平均、历史窗口与粗粒度、内存百分比、温度合理区间、降级链不含被禁用的键族、核型排序。
+
+**可复用的验证手段**：`VITALS_LIVE=1` 运行测试二进制会做一次真机采样并打印实际读数 —— 比"编译通过"有力得多。

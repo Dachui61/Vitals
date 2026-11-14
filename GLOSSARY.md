@@ -36,6 +36,10 @@ _Avoid_: CPU 使用率, CPU 百分比
 One of three kinds of core in this machine's CPU — 超频核 (Super), 性能核 (Performance), 能效核 (Efficiency) — which determines how a loaded core is actually costing you.
 _Avoid_: 大核, 小核, 核心类型
 
+**已用内存** (memory used):
+The physical memory currently in use: (active + inactive − purgeable) + wired + compressed, i.e. the same figure `top` prints as `PhysMem: used`. It **includes** file-backed pages, so it is larger than the Activity Monitor's "Memory Used".
+_Avoid_: App 内存, 活动监视器内存, 内存占用
+
 **采样间隔** (sampling interval):
 How often the collectors ask the system for a fresh reading. One second throughout.
 _Avoid_: 刷新率, 轮询周期

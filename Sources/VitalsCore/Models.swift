@@ -8,6 +8,9 @@ public enum CoreKind: String, CaseIterable, Sendable {
     case superCore = "P"
     case performance = "M"
 
+    /// 核型分组的顺序：先超频核，再性能核，最后能效核（由快到慢）。
+    public static let kindOrder: [CoreKind] = [.superCore, .performance, .efficiency]
+
     /// 界面上显示的名字。
     public var displayName: String {
         switch self {
@@ -39,9 +42,6 @@ public struct CPULoad: Equatable, Sendable {
             k == kind && index < perCore.count ? perCore[index] : nil
         }
     }
-
-    /// 核型分组的顺序：先超频核，再性能核，最后能效核（由快到慢）。
-    public static let kindOrder: [CoreKind] = [.superCore, .performance, .efficiency]
 }
 
 // MARK: - 内存

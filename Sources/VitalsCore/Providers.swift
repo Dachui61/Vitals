@@ -12,7 +12,7 @@ public protocol MetricProvider {
     associatedtype Output
 
     /// 取一次读数。实现必须是廉价且无副作用的（可被 1 Hz 调度器反复调用）。
-    func sample() -> Metric<Output>
+    mutating func sample() -> Metric<Output>
 }
 
 public protocol CPUProvider: MetricProvider where Output == CPULoad {}

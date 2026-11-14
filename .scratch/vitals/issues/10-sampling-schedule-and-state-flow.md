@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 06, 08
 
 # 采样调度与状态流
@@ -18,3 +18,18 @@ Blocked by: 06, 08
 - 单元测试：tick 驱动的时序、退避逻辑、环形缓冲边界。
 
 产出：实现 + 测试；并在 README 记录"多久刷新一次、在哪里改"。
+
+## Answer
+
+**调度与状态流已实现**：`MetricsEngine`（`Sources/VitalsCore/Sampling/MetricsEngine.swift`）。
+
+- 1 Hz `Timer` 挂在主 RunLoop 的 `.common` 模式（睡眠/菜单跟踪时也能继续）。
+- 启动即采一帧，之后每秒一帧；UI 通过 `onUpdate` 回调拿快照，**不触发采集**。
+- 每帧产出 `CoreSnapshot`（CPU / 内存 / 电源 / 核心温度 / SoC 热点 / 热压力），任何一项失败只影响它自己。
+- 历史：`HistoryStore` 维护每核 60 秒曲线（60 点）+ 10 分钟粗粒度（每 10 秒一点，60 点），全在内存，重启清空。
+- 平滑用 3 点滑动平均（**不用 EMA**：滞后会让告警误触发），告警判定用原始值。
+- 温度不可用时后台跑惰性探测，期间该项显示「正在识别…」。
+
+**一个必须记住的坑**：live 检查里如果用 `Thread.sleep` 等 tick，会占住主线程让 Timer 根本没机会触发（表现为 CPU 永远"正在识别…"）。正确写法是 `RunLoop.current.run(until: Date().addingTimeInterval(1))`。
+
+**注意**：`MetricsEngine` 目前是"等价并发结构"（Timer + NSLock）而非 actor —— 因为项目现在跑在 Swift 5 语言模式（严格并发下 `Metric<Value>` 的条件一致性会有告警）。升级到 v6 模式时再改成 actor，届时记在地图的雾区。

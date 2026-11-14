@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 04, 08
 
 # 温度后端实现
@@ -25,3 +25,20 @@ Blocked by: 04, 08
 - 单元测试：后端可用/不可用两种分支、候选键优先级、温度合理性区间校验（如 0–120°C，超界视为无效读数并降级）。
 
 产出：实现 + 测试 + 在本机实跑的读数样本（贴进 `docs/` 的实测记录）。
+
+## Answer
+
+**温度后端已实现并在本机跑通**：核心温度读自 `SMC Tp0j`，SoC 热点读自 `SMC TVD0`，都带「近似值」标注。
+
+实现（`Sources/VitalsCore/Sampling/`）：
+
+- `SMCSession.swift` —— dlopen `/usr/lib/libSMC.dylib` + `SMCOpenConnectionWithDefaultService` / `SMCReadKeyAsNumeric` / `SMCGetKeyInfo` / `SMCGetKeyFromIndex`；键**大端**打包；`allKeyNames()` 枚举（本机 2066 个键）。
+- `TemperatureSampling.swift` —— `TemperatureProviderImpl`（主键 `Tp0j` + 7 键降级链）、`SoCHotspotProviderImpl`、`TemperatureProbe`（惰性探测）、`TemperatureProbeCache`（连同机型与系统版本落盘到 `~/Library/Application Support/Vitals/`）。
+
+行为：
+
+- 读数落在合理区间（0–120 °C）才采用，否则视为无效 → 「不可用」。
+- 连续 3 次读不到才触发惰性探测；探测在后台线程跑（枚举 `T*` 候选 → 1.5 s 单线程 userInteractive 负载 → 取涨幅最大的键），期间界面显示「正在识别…」；探测结果落盘缓存，换机器或系统升级自动失效重探。
+- 任何失败都表达成 `Measurement.unavailable(reason)`，**不抛异常、不返回 0**。
+
+真机读数：核心温度 33–50 °C 随负载浮动，来源 `SMC Tp0j`，可信度「近似值」；SoC 热点 `SMC TVD0`。
