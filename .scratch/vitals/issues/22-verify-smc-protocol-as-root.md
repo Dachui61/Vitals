@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: none
 
 # 用 root 验证 SMC 协议能否取到 CPU 温度
@@ -52,3 +52,11 @@ sleep 20; sudo scratch/t20_smcproto A TC0P; kill %1
 
 - 探针源码：`scratch/t20_smcproto.swift`（也在分支 `research/other-temperature-channels` 的 `research/probes/` 下）。
 - 若第 4 步全都不通但第 3 步 OK，说明键名或命令字节需要再试（例如 `Tp09`/`Tp0T` 这类 plist 风格键，或 thermalmonitord 的 `PMU tcal` 路线）——把那部分输出也一并贴回，交给下一轮逆向。
+
+## Answer
+
+**本票作废，被票 01 的发现取代。** 不需要 root 验证了：`/usr/lib/libSMC.dylib`（macOS 27 的经典 SMC 继任者）**无特权**就能读到数值温度，实测 Tp05/Tp09 随 CPU 负载明显上升（见票 01 的答案）。特权通道（票 20 还原的 168 字节 IOKit 协议）因此不再是温度路线的必要条件。
+
+移交给新票 23 的只有一点：**键语义识别**（哪个键才是 CPU die）。其中"root 下读同一批键"只能证明权限不是变量、不能证明键语义，优先级低，因此不必做。
+
+原探针与报告保留在分支 `research/other-temperature-channels`（`research/probes/t20_smcproto.swift`），将来若需要 root 交叉验证仍可取用。

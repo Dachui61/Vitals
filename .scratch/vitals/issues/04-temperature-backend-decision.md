@@ -1,20 +1,23 @@
 Type: grilling
 Status: open
-Blocked by: 01, 22
+Blocked by: 23
 
 # 温度后端选型与降级契约
 
 ## Question
 
-依据 01（IOReportHub 无特权路线）、20（其余通道穷举）与 22（root 下是否放行 SMC 协议）的结论，**数值 CPU 温度**最终走哪条后端？
+依据 01（IOReportHub 不可行，但发现 `/usr/lib/libSMC.dylib` 可无特权读数值温度）与 23（哪个键是 CPU die）的结论，**数值 CPU 温度**最终走哪条后端？
 
-**已排除**：特权 powermetrics。票 02 定死 macOS 27 上 `powermetrics` 没有 smc sampler（参数解析期即拒，exit 64），root 也拿不到 die 温度。
+**已被排除**：
+- IOReportHub——macOS 27 的通道空间里没有 CPU die 温度通道，且原始样本缓冲区被 KERN_NO_SPACE 挡住（票 01）。
+- 特权 powermetrics——macOS 27 已无 smc sampler，root 也拿不到 die 温度（票 02）。
 
-**但特权本身没被排除**：票 20 完整还原了 `AppleSMCKeysEndpoint` 的协议（selector 2 + 恰好 168 字节；`+0x00` key 4CC char0 在低字节、`+0x1c` key 长度、`+0x2a` 命令字节=6、`+0x30` key 字符），命令字节 6 返回 `kIOReturnNotPrivileged`——**授权检查在查键之前，是调用者身份被拒，不是通道不存在**。root 会不会放行由票 22 实测。
+**候选**：
+- (a) **`/usr/lib/libSMC.dylib`（无特权）**——`SMCOpenConnectionWithDefaultService` / `SMCReadKeyAsNumeric` / `SMCGetKeyInfo`，单次读 ~100 µs，1 Hz 无压力。需票 23 定下"CPU die 是哪个键"。私有 API，须带能力探测（dlopen 失败 / 符号缺失 / 键不存在 → 一律走降级）。
+- (b) **thermalState 四档**——公开 API，零成本，唯一的保底。
+- (c) **组合**：(a) 优先，失败降 (b)，再失败显示"不可用 + 原因"。
 
-候选：(a) 私有 IOReportHub 实现——无特权，但私有 API 且会随系统升级失效（票 01）；(b) 特权组件直接说这套还原出的 SMC 协议读温度（不走 powermetrics），键名白名单化（票 22 验证后成立）；(c) 组合：能力探测后按序尝试 (a) → (b) → (d)，每级"试一次就知道行不行"，不写死版本号；(d) 放弃数值温度，只用 thermalState 四档。
-
-若 (d) 胜出，必须显式记为**对既定需求的让步**：v1 曾被定为"必须有数值温度"，届时要么改需求（降级为四档并在界面写明原因），要么把 v1 的温度后端整票挂起。这一点要在本票里明确说清楚，不能含糊过去。
+若 (a) 的键语义最终只能靠负载相关性**推断**（而非直接确认），则界面必须按 GLOSSARY 把读数标为**近似值**——这条要写进 SPEC 的可信度标注规则。
 
 同时要在本票定下**降级契约**（写进 SPEC，不能含糊）：
 
