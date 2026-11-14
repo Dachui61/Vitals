@@ -1,2 +1,4 @@
-.scratch/
-research/
+.build/
+.modulecache/
+scratch/
+.DS_Store
