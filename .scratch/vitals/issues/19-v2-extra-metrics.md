@@ -1,5 +1,5 @@
 Type: task
-Status: open
+Status: resolved
 Blocked by: 10, 17
 
 # v2：GPU / 磁盘 / 网络 / 进程 Top
@@ -23,3 +23,25 @@ Blocked by: 10, 17
 **明确不做**：每进程磁盘 IO（`proc_pid_rusage` 对所有 pid 返回 0，V0/V1/V4 内核 abort）、绑核/affinity、`l2perflevels`、CPU/GPU 功耗 mW（需特权，而票 21 决定不引入特权组件）。
 
 产出：实现 + 测试 + 验收勾选更新。
+
+## Answer
+
+**v2 指标已实现并在本机跑通**（`Sources/VitalsCore/Sampling/ExtendedSampling.swift` + 面板接入）：
+
+| 指标 | 后端 | 实测 |
+|---|---|---|
+| GPU 占用 | `AGXAccelerator` → `PerformanceStatistics` 的 `Device Utilization %`，**连读 3 次取最大**（驱动每 ~250 ms 整组掉 0） | 0% 空闲；「占用系统内存」24 MB / 已划 9036 MB |
+| 磁盘读写 | IOKit `IOBlockStorageDriver` → `Statistics` 累计计数器差分 | 首帧无基准显示「正在识别…」，第二帧起给出读/写 MB/s |
+| 网络上下行 | `getifaddrs` + `if_data` 差分，**排除 lo0 与虚拟网卡**（utun/bridge/awdl…），选第一个 UP 的真实网卡 | en0，↓/↑ KB/s |
+| 进程 Top 5 | libproc `proc_listpids` + `proc_pidinfo`，**天然只返回当前用户的进程**；按常驻内存排序 | DeepSeek Harness(550MB) / com.apple.WebKi(419MB) / Safari(222MB) … |
+
+面板接入（按票 24 的分档表）：L1 加 GPU 占用瓦片，L2 加磁盘/网络瓦片，L4 加进程 Top 5 卡片。
+
+**两个实现上的修正**：
+
+1. **每进程 CPU% 不提供**（票 03 判定它不可靠：`pti_total_user` 纳秒值差分不自洽、`p_cpticks` 不动）→ 只显示进程名 + 常驻内存。宁可少一个数字，也不要给会骗人的数字。
+2. macOS 27 的 `proc_bsdinfo` **没有 `pbi_rssize` 了**，常驻内存改从 `ptinfo.pti_resident_size` 取；进程名用 `pbsd.pbi_comm`（`proc_name` 对部分进程返回 0 长度，会显示成 "?"）。
+
+**另一个命名撞车**：Foundation 已经有 `ProcessInfo` 类型（和之前的 `Measurement` 一样），本项目的进程行因此叫 **`ProcessRow`**。
+
+进程列表**降频到 3 秒刷新一次**（全量扫描 0.889 ms，不必每秒做）。

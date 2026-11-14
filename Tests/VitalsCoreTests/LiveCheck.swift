@@ -71,6 +71,44 @@ func runLiveCheck() -> Int {
         print("  内存: \(memory)")
         print("  电源: \(power)")
         print("  热压力等级: \(snapshot.thermalState.value?.rawValue ?? "不可用")")
+
+        let gpu: String
+        switch snapshot.gpu {
+        case let .value(usage, _, source):
+            gpu = String(format: "%d%%  占用系统内存 %.0f MB / 已划 %.0f MB  (%@)",
+                         usage.percent, Double(usage.memoryInUseBytes) / 1048576,
+                         Double(usage.memoryAllocatedBytes) / 1048576, source ?? "-")
+        case let .unavailable(reason): gpu = "不可用（\(reason.description)）"
+        }
+        print("  GPU: \(gpu)")
+
+        let disk: String
+        switch snapshot.disk {
+        case let .value(throughput, _, _):
+            disk = String(format: "读 %.2f MB/s  写 %.2f MB/s",
+                          Double(throughput.bytesReadPerSecond) / 1048576,
+                          Double(throughput.bytesWrittenPerSecond) / 1048576)
+        case let .unavailable(reason): disk = "不可用（\(reason.description)）"
+        }
+        print("  磁盘: \(disk)")
+
+        let net: String
+        switch snapshot.network {
+        case let .value(throughput, _, _):
+            net = String(format: "↓%.0f KB/s  ↑%.0f KB/s  (%@)",
+                         Double(throughput.bytesInPerSecond) / 1024,
+                         Double(throughput.bytesOutPerSecond) / 1024, throughput.interfaceName)
+        case let .unavailable(reason): net = "不可用（\(reason.description)）"
+        }
+        print("  网络: \(net)")
+
+        let procs: String
+        switch snapshot.processes {
+        case let .value(rows, _, _):
+            procs = rows.map { "\($0.name)(\(Int($0.residentBytes / 1048576))MB)" }.joined(separator: " ")
+        case let .unavailable(reason): procs = "不可用（\(reason.description)）"
+        }
+        print("  进程 Top: \(procs)")
         print("  ---")
     }
     engine.stop()

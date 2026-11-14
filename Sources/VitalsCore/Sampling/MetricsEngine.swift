@@ -39,6 +39,13 @@ public final class MetricsEngine {
     private let thermalProvider = ThermalStateProviderImpl()
     private var temperatureProvider: TemperatureProviderImpl
     private var socProvider = SoCHotspotProviderImpl()
+    private let gpuProvider = GPUProviderImpl()
+    private let diskProvider = DiskProviderImpl()
+    private let networkProvider = NetworkProviderImpl()
+    private let processProvider = ProcessProviderImpl()
+    /// 进程列表的刷新间隔（秒）——全量扫描 0.889 ms，比指标采样慢得多。
+    private var lastProcessSample: Date?
+    private let processInterval: TimeInterval = 3
     private var smoothers: [MovingAverage3] = []
     private var temperatureFailures = 0
     private let probeCache = TemperatureProbeCache()
@@ -71,6 +78,7 @@ public final class MetricsEngine {
     private func tick() {
         lock.lock()
         defer { lock.unlock() }
+        let now = Date()
 
         var current = CoreSnapshot.empty
 
@@ -91,6 +99,17 @@ public final class MetricsEngine {
         }
 
         current.memory = memoryProvider.sample()
+        current.gpu = gpuProvider.sample()
+        current.disk = diskProvider.sample()
+        current.network = networkProvider.sample()
+
+        // 进程列表降频刷新（2–3 秒一次即可），省掉每帧 0.9 ms 的全量扫描。
+        if let last = lastProcessSample, now.timeIntervalSince(last) < processInterval {
+            current.processes = snapshot.processes
+        } else {
+            current.processes = processProvider.sample()
+            lastProcessSample = now
+        }
         current.power = powerProvider.sample()
         current.thermalState = thermalProvider.sample()
 

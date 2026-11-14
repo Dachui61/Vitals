@@ -83,6 +83,7 @@ public struct VitalsPanel: View {
                     tiles
                     if level >= .powerTiles { powerTiles }
                     if level >= .temperature { temperatureCard }
+                    if level >= .processes { processCard }
                     if level >= .cores { coreCurves }
                 }
             }
@@ -151,12 +152,15 @@ public struct VitalsPanel: View {
             MetricTile(title: "CPU", text: cpuText, tint: theme.primaryText, theme: theme)
             MetricTile(title: "核心温度", text: temperatureShortText, tint: temperatureTint, theme: theme)
             MetricTile(title: "内存", text: memoryText, tint: theme.primaryText, theme: theme)
+            MetricTile(title: "GPU 占用", text: gpuText, tint: theme.primaryText, theme: theme)
         }
     }
 
     private var powerTiles: some View {
         HStack(spacing: 8) {
             MetricTile(title: "电源", text: powerText, tint: theme.primaryText, theme: theme)
+            MetricTile(title: "磁盘", text: diskText, tint: theme.primaryText, theme: theme)
+            MetricTile(title: "网络", text: networkText, tint: theme.primaryText, theme: theme)
         }
     }
 
@@ -273,6 +277,37 @@ public struct VitalsPanel: View {
         }
     }
 
+    // MARK: - 进程 Top 5（只读、只含当前用户的进程）
+
+    private var processCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("进程 Top 5").font(.system(size: 10)).foregroundStyle(theme.secondaryText)
+                Spacer()
+                Text("仅当前用户 · 只读").font(.system(size: 9)).foregroundStyle(theme.secondaryText.opacity(0.7))
+            }
+            if let rows = model.snapshot.processes.value {
+                ForEach(rows) { row in
+                    HStack(spacing: 8) {
+                        Text(row.name).font(.system(size: 11)).foregroundStyle(theme.primaryText).lineLimit(1)
+                        Spacer()
+                        Text(VitalsFormat.bytes(row.residentBytes))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(theme.secondaryText.opacity(0.75))
+                            .frame(width: 70, alignment: .trailing)
+                    }
+                }
+            } else {
+                Text(model.snapshot.processes.unavailableReason?.description ?? "不可用")
+                    .font(.system(size: 10)).foregroundStyle(theme.secondaryText)
+            }
+        }
+        .padding(10)
+        .background(theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(theme.stroke, lineWidth: 1))
+    }
+
     // MARK: - 每核占用
 
     private var coreCurves: some View {
@@ -342,6 +377,25 @@ public struct VitalsPanel: View {
     private var powerText: String {
         guard let power = model.snapshot.power.value else { return "不可用" }
         return power.displayName
+    }
+
+    private var gpuText: String {
+        guard let gpu = model.snapshot.gpu.value else { return "不可用" }
+        return "\(gpu.percent)%"
+    }
+
+    private var diskText: String {
+        guard let disk = model.snapshot.disk.value else { return "不可用" }
+        return String(format: "%.1f/%.1f MB/s",
+                      Double(disk.bytesReadPerSecond) / 1048576,
+                      Double(disk.bytesWrittenPerSecond) / 1048576)
+    }
+
+    private var networkText: String {
+        guard let network = model.snapshot.network.value else { return "不可用" }
+        return String(format: "↓%.0f ↑%.0f KB/s",
+                      Double(network.bytesInPerSecond) / 1024,
+                      Double(network.bytesOutPerSecond) / 1024)
     }
 
     private var temperatureShortText: String {

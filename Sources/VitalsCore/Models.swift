@@ -114,6 +114,9 @@ public struct PowerState: Equatable, Sendable {
     }
 }
 
+// MARK: - v2 指标
+
+/// 进程信息（只读）。
 // MARK: - 快照
 
 /// 一次采样得到的全部指标。UI 只读这个结构，不直接调用任何采样器。
@@ -127,6 +130,14 @@ public struct CoreSnapshot: Equatable, Sendable {
     public var socHotspot: Metric<TemperatureReading>
     /// 热压力等级。
     public var thermalState: Metric<ThermalState>
+    /// GPU 占用（v2，近似值）。
+    public var gpu: Metric<GPUUsage>
+    /// 磁盘读写速率（v2）。
+    public var disk: Metric<DiskThroughput>
+    /// 网络上下行速率（v2）。
+    public var network: Metric<NetworkThroughput>
+    /// 进程 Top 5（v2，只读、只含当前用户的进程）。
+    public var processes: Metric<[ProcessRow]>
 
     public init(
         cpu: Metric<CPULoad> = .unavailable(.unsupported),
@@ -134,7 +145,11 @@ public struct CoreSnapshot: Equatable, Sendable {
         power: Metric<PowerState> = .unavailable(.unsupported),
         coreTemperature: Metric<TemperatureReading> = .unavailable(.unsupported),
         socHotspot: Metric<TemperatureReading> = .unavailable(.unsupported),
-        thermalState: Metric<ThermalState> = .unavailable(.unsupported)
+        thermalState: Metric<ThermalState> = .unavailable(.unsupported),
+        gpu: Metric<GPUUsage> = .unavailable(.unsupported),
+        disk: Metric<DiskThroughput> = .unavailable(.unsupported),
+        network: Metric<NetworkThroughput> = .unavailable(.unsupported),
+        processes: Metric<[ProcessRow]> = .unavailable(.unsupported)
     ) {
         self.cpu = cpu
         self.memory = memory
@@ -142,6 +157,10 @@ public struct CoreSnapshot: Equatable, Sendable {
         self.coreTemperature = coreTemperature
         self.socHotspot = socHotspot
         self.thermalState = thermalState
+        self.gpu = gpu
+        self.disk = disk
+        self.network = network
+        self.processes = processes
     }
 
     /// 全部都还拿不到的快照（启动时、探测中的过渡态）。
