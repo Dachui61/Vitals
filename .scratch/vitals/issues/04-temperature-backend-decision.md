@@ -1,14 +1,18 @@
 Type: grilling
 Status: open
-Blocked by: 01, 02
+Blocked by: 01, 20
 
 # 温度后端选型与降级契约
 
 ## Question
 
-依据 01（IOReportHub 无特权路线）与 02（powermetrics 特权路线）的事实，**数值 CPU 温度**最终走哪条后端？
+依据 01（IOReportHub 无特权路线）与 20（其余温度通道穷举）的结论，**数值 CPU 温度**最终走哪条后端？
 
-候选：(a) 私有 IOReportHub 实现——无特权、但私有 API 且会随系统升级失效；(b) 特权 helper 以 root 运行 powermetrics 并解析——需安装、走 .pkg，但路径已确认可行；(c) 两者都实现，能力探测后自动选择、IOReport 优先、特权兜底；(d) 放弃数值温度，只用 thermalState 四档。
+**已被排除**：特权路线。票 02 已定死 macOS 27 上 `powermetrics` 没有 smc sampler（参数解析期即拒，exit 64），Apple Silicon 构建里没有任何 die 温度打印——root 也拿不到 °C。所以候选里不再有"特权 helper 拿温度"这一项。
+
+候选：(a) 私有 IOReportHub 实现——无特权，但私有 API 且会随系统升级失效；(b) 组合：能力探测后按序尝试 01/20 找到的路，都不通则 (c)；(c) 放弃数值温度，只用 thermalState 四档。
+
+若 (c) 胜出，必须显式记为**对既定需求的让步**：v1 曾被定为"必须有数值温度"，届时要么改需求（降级为四档并在界面写明原因），要么把 v1 的温度后端整票挂起。这一点要在本票里明确说清楚，不能含糊过去。
 
 同时要在本票定下**降级契约**（写进 SPEC，不能含糊）：
 
