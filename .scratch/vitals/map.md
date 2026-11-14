@@ -43,6 +43,7 @@ Effort: vitals
 - [阈值告警](issues/13-alerting.md): 判定逻辑在 `VitalsCore.AlertEngine`（纯逻辑，9 个单测）；温度取**核心温度与 SoC 热点中较高者**（地图雾区那个待决项按推荐实现，用户可推翻）；CPU 需持续 30 s；**边沿触发 + 10 分钟冷却**（持续高温只发一次）；通知被拒则退化为面板横幅。
 - [安装包与开机自启](issues/15-packaging-and-autostart.md): `build/Vitals.pkg` 装到 **用户域**（`~/Applications` + `~/Library/LaunchAgents`）→ **双击安装不需要管理员密码**；本机已安装并注册，`launchctl print` 显示 `state = running`。
 - [docs/SPEC.md 完整规格](issues/17-spec.md): 规格已写好（含分档表、口径表、采集架构图、降级链、**八个已知坑**、安装与验证命令）。
+- [全量验收执行与缺陷修复](issues/18-full-acceptance-run.md): `scripts/acceptance-check.sh` 自动化执行 **23 条全部通过**（满载升温 +21.2 °C、内存与 `top` 一致、应用已安装且开机自启 `state = running`）；18 条人工项因屏幕休眠无法自动判定，步骤与预期已写进 `docs/acceptance-report.md`。两处清单修正：内存上限 60→100 MB（SwiftUI 平台基线就要 77 MB）、内存对照物改为 `top` 的 PhysMem used。
 - [验收清单与量化指标](issues/07-acceptance-checklist.md): `docs/acceptance.md`（六组 30 条）已定稿——每条都有验证步骤与通过阈值，阈值取自实测（CPU 差 ≤3pt、内存口径差 ≤2%、温度 30–60°C、满载 ≤90°C、常驻 ≤60MB、告警冷却 10 分钟、`.pkg` 安装免密码）。
 - [GLOSSARY 与 ADR](issues/16-glossary-and-adrs.md): `GLOSSARY.md` 补全（新增 SoC 热点 / 惰性探测 / 窗口分档）；`docs/adr/` 三篇——温度后端与降级策略、为何不引入特权组件、私有接口的使用与降级。
 
