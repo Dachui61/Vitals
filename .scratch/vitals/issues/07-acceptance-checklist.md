@@ -16,5 +16,6 @@ Blocked by: none
 - **行为**：开机自启生效、helper 未安装时的降级表现、告警触发与冷却（不重复刷屏）、阈值修改后立即生效、菜单栏迷你读数与浮窗数值一致。
 - **安装**：`.pkg` 双击安装后 app 出现在 /Applications、LaunchAgent 已注册、helper 状态符合预期、卸载后无残留。
 - 每条写明**验证步骤**（具体命令或操作）与**通过阈值**，不允许"看着差不多"。
+- 测试形式：本机没有 XCTest / swift-testing，单元测试用 `Tests/VitalsCoreTests` 的零依赖断言运行器（`scripts/test.sh`）；其余靠手动验收。
 
 产出：`docs/acceptance.md`，并在 README 里链接它。

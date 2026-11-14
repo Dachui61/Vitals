@@ -1,5 +1,6 @@
 .build/
 .modulecache/
 scratch/
+build/
 .DS_Store
 prototypes/VitalsPrototype.app/

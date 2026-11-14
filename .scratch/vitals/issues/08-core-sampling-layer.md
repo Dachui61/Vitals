@@ -19,7 +19,7 @@ Blocked by: 03, 06, 07
 - **热压力等级**：`ProcessInfo.thermalState` + `thermalStateDidChangeNotification`。
 - **GPU 占用**（接口先做好，UI 后接）：`AGXAcceleratorG18G` → `PerformanceStatistics` 的 `Device Utilization %`（18.95 µs）。**每 ~250 ms 会整组掉 0** → 每次连读 3 次取最大；Device% 与 Renderer% 恒等。**统一内存，没有"显存"**，若要显示内存则用同节点的 `In use system memory`，命名按"GPU 占用系统内存"。
 - 采样器抽象：每个指标一个 provider 协议，失败时返回"不可用 + 原因"而不是抛异常或编造数值；便于单测注入假数据。
-- **单元测试**（`VitalsCoreTests`）：CPU 差分算法（已知序列 → 已知百分比）、平滑（ma3，不是 EMA——EMA 滞后会让告警误触发）、环形缓冲、速率计算、百分比与温度格式化边界（不可用/负值/NaN）、核型映射（E/P/M → 中文名与分组）。
+- **单元测试**（`Tests/VitalsCoreTests`，用票 06 定下的零依赖断言运行器：`test()` / `expect()` / `expectEqual()` / `expectClose()`，由 `scripts/test.sh` 跑，退出码即成败；**本机没有 XCTest 也没有 swift-testing**）：CPU 差分算法（已知序列 → 已知百分比）、平滑（ma3，不是 EMA——EMA 滞后会让告警误触发）、环形缓冲、速率计算、百分比与温度格式化边界（不可用/负值/NaN）、核型映射（E/P/M → 中文名与分组）。
 - 告警用的应是**原始值**，不是平滑值。
 
 约束：采样层不 import SwiftUI，不碰 UIKit/AppKit；**不得 fork 子进程**取数（实测 fork `iostat` 1075 ms、`pmset` 76 ms，1 Hz 完全不可接受）。

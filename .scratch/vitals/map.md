@@ -34,6 +34,7 @@ Effort: vitals
 - [悬浮窗视觉与布局原型](issues/05-floating-window-visual-prototype.md): 原型已跑通并定稿视觉规范——八段布局、12 条每核曲线（超频橙红/性能蓝/能效绿）、详情一位小数+瓦片整数、**主题跟随系统浅/深**、窗口**可缩放自适应**（默认 470×860 / 最小 400×620）、告警只变数字+阈值带、四种状态变体与「不可用」文案；资产在 `prototypes/`。
 - [悬浮窗的响应式分级布局](issues/24-responsive-graded-layout-prototype.md): 尺寸驱动内容分级（取代固定八段布局）——**L0 一行字 → L1 四瓦片 → L2 加电源/磁盘/网络 → L3 加温度卡 → L4 加进程 Top 5 → L5 加每核曲线**；宽高各算上限取小者，高度不够就退档；L0 最小 230×34；无边框可拖动可缩放 + 右下角缩放握把。
 - [悬浮窗的透明度调节](issues/25-window-opacity-control.md): **背景可调透明度（20–100%，默认 100%），文字与曲线始终不透明**；入口是菜单栏菜单里的滑块（悬浮窗内不放控件）；透明度一直生效，告警时不强制恢复；不用 `NSWindow.alphaValue`。
+- [项目骨架与构建打包](issues/06-project-scaffold-and-build.md): SPM 多 target 骨架（VitalsCore/VitalsUI/VitalsApp/Tests）已跑通，`build/Vitals.app` 双击可运行、`lsappinfo` 确认 `type="UIElement"`。三条环境事实：本机**无 XCTest 也无 swift-testing**（测试改用零依赖断言运行器）；Foundation 已有 `Measurement<Unit>` 故本项目类型叫 **`Metric<Value>`**；悬浮窗默认位置要避开 Dock（用 `visibleFrame`）与左上角桌面小组件（层级高于 `.floating`）。
 
 ## Not yet specified
 
@@ -47,8 +48,9 @@ Effort: vitals
 - **速率换算的时间基准**：`mach_absolute_time` 在本机不是纳秒（24 MHz），网络/磁盘速率的换算基准要定清楚（等票 19）
 - 进程 Top 列表中"当前用户进程"的判定口径与刷新开销（已由票 03 定案：libproc 天然只返回当前用户进程，2–3 s 刷一次）
 - 自用 .pkg 是否需要 Developer ID 签名与公证（等「安装与分发」）
-- 浮窗默认位置、是否记忆上次位置与大小、跨显示器移动的行为（等票 12）
+- 浮窗默认位置、是否记忆上次位置与大小、跨显示器移动的行为（等票 12；注意**桌面小组件层级高于 `.floating` 窗口**，默认位置别放左上角）
 - 窗口尺寸记忆：L0 最小 230×34 是下限，那默认打开时给多大、要不要记住用户上次拖到的大小（等票 12）
+- Swift 语言模式：目前是 `swiftLanguageModes: [.v5]`（避免严格并发告警），要不要升到 v6 并补齐 `Metric` 的 Sendable 约束（等票 10 落地 actor 调度时一并处理）
 - 历史数据是否需要落盘或导出（当前仅在内存，未定）
 
 ## Out of scope
