@@ -48,6 +48,19 @@ Effort: vitals
 - [验收清单与量化指标](issues/07-acceptance-checklist.md): `docs/acceptance.md`（六组 30 条）已定稿——每条都有验证步骤与通过阈值，阈值取自实测（CPU 差 ≤3pt、内存口径差 ≤2%、温度 30–60°C、满载 ≤90°C、常驻 ≤60MB、告警冷却 10 分钟、`.pkg` 安装免密码）。
 - [GLOSSARY 与 ADR](issues/16-glossary-and-adrs.md): `GLOSSARY.md` 补全（新增 SoC 热点 / 惰性探测 / 窗口分档）；`docs/adr/` 三篇——温度后端与降级策略、为何不引入特权组件、私有接口的使用与降级。
 
+## 交付状态
+
+**25 张票全部解决，frontier 为空。** v1 + v2 全部落地：
+
+- `build/Vitals.app` 已安装到 `~/Applications/Vitals.app`，开机自启已注册（`launchctl print` → `state = running`）。
+- `build/Vitals.pkg` 可双击安装（用户域，不需要管理员密码）。
+- 自动验收 23 条全部通过；18 条人工项（观感/拖拽/主题/通知/休眠唤醒/重启自启/卸载）因验收时屏幕休眠无法自动判定，步骤与预期写在 `docs/acceptance-report.md`。
+- 文档齐全：`docs/SPEC.md`、`docs/acceptance.md`、`docs/acceptance-report.md`、`GLOSSARY.md`、三篇 ADR。
+
+**留给你确认的两件事**：
+1. 亮屏时过一遍验收报告里的人工项。
+2. 地图雾区里那个待决项：温度告警看"核心温度"还是"两者较高者"——当前按**取较高者**实现（`AlertEngine` 一行可改）。
+
 ## Not yet specified
 
 - 温度后端落地后，降级链在界面上的具体文案与色带（等票 04 → 已定原则，细节归 SPEC）
