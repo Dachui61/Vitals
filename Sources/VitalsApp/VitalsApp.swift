@@ -19,6 +19,59 @@ struct VitalsAppMain {
     }
 }
 
+/// 原生拖动窗口的 HostingView。
+///
+/// 背景：`NSHostingView` 铺满整个窗口，会吃掉所有鼠标事件，
+/// 所以 `isMovableByWindowBackground` 对 SwiftUI 内容**无效** —— 窗口拖不动。
+/// 这里在 `mouseDown` 里直接交给 `NSWindow.performDrag(with:)`，行为与系统标题栏一致。
+/// 两处需要让给 SwiftUI 自己的控件：右上角的关闭按钮与右下角的缩放握把。
+final class DraggableHostingView: NSHostingView<VitalsPanel> {
+
+    /// 拖动起点：窗口原点 + 抓取点（视图坐标）。
+    private var dragOrigin: NSPoint?
+    private var dragStartLocal: NSPoint?
+
+    /// 让给控件的区域（窗口坐标，y 向上）——这些地方要留给 SwiftUI 自己的控件。
+    private var controlRegions: [NSRect] {
+        let bounds = self.bounds
+        return [
+            // 关闭按钮（右上）
+            NSRect(x: bounds.maxX - 76, y: bounds.maxY - 48, width: 62, height: 34),
+            // 缩放握把（右下）
+            NSRect(x: bounds.maxX - 30, y: bounds.minY, width: 28, height: 28)
+        ]
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if controlRegions.contains(where: { $0.contains(point) }) {
+            super.mouseDown(with: event)
+            return
+        }
+        guard let window else {
+            super.mouseDown(with: event)
+            return
+        }
+        dragOrigin = window.frame.origin
+        dragStartLocal = convert(event.locationInWindow, from: nil)
+    }
+
+    /// 用**事件自身的坐标**算位移，而不是全局光标位置：
+    /// - 真实拖动时，事件坐标相对窗口，抓取点会一直贴在光标下（与系统标题栏一致）；
+    /// - 合成事件（自测）也能复现同样的行为。
+    override func mouseDragged(with event: NSEvent) {
+        guard let window, let origin = dragOrigin, let start = dragStartLocal else { return }
+        let local = convert(event.locationInWindow, from: nil)
+        window.setFrameOrigin(NSPoint(x: origin.x + (local.x - start.x),
+                                     y: origin.y + (local.y - start.y)))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragOrigin = nil
+        dragStartLocal = nil
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var panelWindow: NSWindow?
@@ -48,6 +101,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         makeStatusItem()
         makePanelWindow()
+        runSelfTestIfRequested()
+    }
+
+    /// 自测：VITALS_SELFTEST=1 时，应用自己合成一次拖动，验证窗口真的能被拖走。
+    /// （外部脚本合成的事件会被系统拦——没有辅助功能权限——所以只能自发自收。）
+    private func runSelfTestIfRequested() {
+        guard ProcessInfo.processInfo.environment["VITALS_SELFTEST"] == "1" else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.runDragSelfTest() }
+    }
+
+    private func runDragSelfTest() {
+        guard let window = panelWindow else {
+            print("[selftest] 没有窗口"); exit(2)
+        }
+        let before = window.frame.origin
+        let contentHeight = window.contentView?.bounds.height ?? window.frame.height
+        // 面板主体（避开右上角关闭按钮与右下角握把）
+        let start = NSPoint(x: 120, y: contentHeight - 80)
+        let delta = NSPoint(x: 180, y: 120)
+
+        func send(_ type: NSEvent.EventType, _ point: NSPoint) {
+            guard let event = NSEvent.mouseEvent(with: type,
+                                                 location: point,
+                                                 modifierFlags: [],
+                                                 timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: window.windowNumber,
+                                                 context: nil,
+                                                 eventNumber: 0,
+                                                 clickCount: 1,
+                                                 pressure: type == .mouseMoved ? 0 : 1) else { return }
+            window.sendEvent(event)
+        }
+
+        send(.mouseMoved, start)
+        send(.leftMouseDown, start)
+        usleep(120_000)
+        for step in 1...10 {
+            let t = CGFloat(step) / 10
+            send(.leftMouseDragged, NSPoint(x: start.x + delta.x * t, y: start.y + delta.y * t))
+            usleep(30_000)
+        }
+        send(.leftMouseUp, NSPoint(x: start.x + delta.x, y: start.y + delta.y))
+        usleep(300_000)
+
+        let after = window.frame.origin
+        let moved = abs(after.x - before.x) > 30 || abs(after.y - before.y) > 30
+        print("[selftest] 拖动前 \(before) → 拖动后 \(after) → \(moved ? "✅ 拖动生效" : "❌ 窗口没动")")
+        exit(moved ? 0 : 1)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -195,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.minSize = NSSize(width: 230, height: 34)
         window.maxSize = NSSize(width: 4000, height: 3000)
 
-        let hosting = NSHostingView(rootView: VitalsPanel(model: model))
+        let hosting = DraggableHostingView(rootView: VitalsPanel(model: model))
         hosting.frame = window.contentLayoutRect
         hosting.autoresizingMask = [.width, .height]
         window.contentView = hosting

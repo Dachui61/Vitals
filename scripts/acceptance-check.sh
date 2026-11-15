@@ -78,6 +78,14 @@ else
   bad "A3 核型映射" "$KERN_TYPE"
 fi
 
+echo "== 交互：拖动窗口 =="
+SELFTEST="$(VITALS_SELFTEST=1 "$HOME/Applications/Vitals.app/Contents/MacOS/Vitals" 2>&1 | tail -1)"
+if echo "$SELFTEST" | grep -q "拖动生效"; then
+  ok "D3 悬浮窗可拖动" "$(echo "$SELFTEST" | sed 's/\[selftest\] //')"
+else
+  bad "D3 悬浮窗可拖动" "$SELFTEST"
+fi
+
 echo "== 安装与自启 =="
 if [ -d "$HOME/Applications/Vitals.app" ]; then ok "E2 应用已安装" "~/Applications/Vitals.app"; else bad "E2 应用已安装" "未找到"; fi
 LC_STATE="$(launchctl print "gui/$(id -u)/local.vitals.app" 2>/dev/null | grep -m1 'state =' | sed 's/.*= //')"

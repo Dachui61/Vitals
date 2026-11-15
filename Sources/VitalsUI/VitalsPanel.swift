@@ -45,6 +45,8 @@ public struct VitalsPanel: View {
 
     @ObservedObject private var model: PanelViewModel
     @Environment(\.colorScheme) private var colorScheme
+    /// 窗口交互（拖动 / 缩放）：SwiftUI 里要移动窗口必须先拿到 NSWindow。
+    @StateObject private var interaction = WindowInteractionController()
 
     public init(model: PanelViewModel) {
         self.model = model
@@ -67,6 +69,11 @@ public struct VitalsPanel: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.white.opacity(0.10), lineWidth: 1)
         )
+        .background(WindowAccessor { interaction.resolve($0) })
+        .overlay(alignment: .bottomTrailing) {
+            ResizeGrip(controller: interaction)
+                .padding(2)
+        }
     }
 
     @ViewBuilder
@@ -116,12 +123,18 @@ public struct VitalsPanel: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { _ in
-                    Capsule().fill(theme.secondaryText.opacity(0.5)).frame(width: 10, height: 2)
+            // 抓手 + 标题：拖这里移动窗口（SwiftUI 里 NSHostingView 会吃掉背景拖拽，
+            // isMovableByWindowBackground 对我们无效，所以必须自己实现）。
+            HStack(spacing: 6) {
+                HStack(spacing: 3) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Capsule().fill(theme.secondaryText.opacity(0.5)).frame(width: 10, height: 2)
+                    }
                 }
+                Text("Vitals").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.primaryText)
             }
-            Text("Vitals").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.primaryText)
+            .help("拖动面板任意位置可移动窗口")
+
             Spacer()
             HStack(spacing: 4) {
                 Circle().fill(Color.green).frame(width: 5, height: 5)
