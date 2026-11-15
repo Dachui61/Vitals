@@ -79,9 +79,11 @@ else
 fi
 
 echo "== 交互：拖动窗口 =="
-SELFTEST="$(VITALS_SELFTEST=1 "$HOME/Applications/Vitals.app/Contents/MacOS/Vitals" 2>&1 | tail -1)"
-if echo "$SELFTEST" | grep -q "拖动生效"; then
-  ok "D3 悬浮窗可拖动" "$(echo "$SELFTEST" | sed 's/\[selftest\] //')"
+SELFTEST="$(VITALS_SELFTEST=1 "$HOME/Applications/Vitals.app/Contents/MacOS/Vitals" 2>&1 | grep selftest)"
+if echo "$SELFTEST" | grep -q "逐帧贴合光标"; then
+  ok "D3 悬浮窗可拖动且逐帧贴合" "$(echo "$SELFTEST" | grep '最大逐帧偏差' | sed 's/\[selftest\] //' | head -1)"
+elif echo "$SELFTEST" | grep -q "拖动生效"; then
+  bad "D3 悬浮窗可拖动（但有迟滞）" "$SELFTEST"
 else
   bad "D3 悬浮窗可拖动" "$SELFTEST"
 fi

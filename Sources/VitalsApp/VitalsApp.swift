@@ -27,9 +27,9 @@ struct VitalsAppMain {
 /// 两处需要让给 SwiftUI 自己的控件：右上角的关闭按钮与右下角的缩放握把。
 final class DraggableHostingView: NSHostingView<VitalsPanel> {
 
-    /// 拖动起点：窗口原点 + 抓取点（视图坐标）。
+    /// 拖动起点：窗口原点 + 鼠标当时的**屏幕**位置。
     private var dragOrigin: NSPoint?
-    private var dragStartLocal: NSPoint?
+    private var dragMouseScreen: NSPoint?
 
     /// 让给控件的区域（窗口坐标，y 向上）——这些地方要留给 SwiftUI 自己的控件。
     private var controlRegions: [NSRect] {
@@ -43,7 +43,9 @@ final class DraggableHostingView: NSHostingView<VitalsPanel> {
     }
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        // 用**窗口坐标**判断落在哪个区域：NSHostingView 是 flipped 的，
+        // 视图坐标与窗口坐标上下相反，混用会把排除区判反。
+        let point = event.locationInWindow
         if controlRegions.contains(where: { $0.contains(point) }) {
             super.mouseDown(with: event)
             return
@@ -53,22 +55,24 @@ final class DraggableHostingView: NSHostingView<VitalsPanel> {
             return
         }
         dragOrigin = window.frame.origin
-        dragStartLocal = convert(event.locationInWindow, from: nil)
+        dragMouseScreen = window.convertPoint(toScreen: event.locationInWindow)
     }
 
-    /// 用**事件自身的坐标**算位移，而不是全局光标位置：
-    /// - 真实拖动时，事件坐标相对窗口，抓取点会一直贴在光标下（与系统标题栏一致）；
-    /// - 合成事件（自测）也能复现同样的行为。
+    /// 用鼠标的**屏幕位移**驱动窗口，而不是"事件相对窗口的坐标差"。
+    ///
+    /// 后者会自我干扰：窗口一旦移动，事件坐标就相对新窗口算，
+    /// 于是位移被"打折"，窗口只跟着鼠标走一部分（迟滞感）。
+    /// 屏幕位移没有这个问题——它与窗口位置无关，窗口会精确贴合光标。
     override func mouseDragged(with event: NSEvent) {
-        guard let window, let origin = dragOrigin, let start = dragStartLocal else { return }
-        let local = convert(event.locationInWindow, from: nil)
-        window.setFrameOrigin(NSPoint(x: origin.x + (local.x - start.x),
-                                     y: origin.y + (local.y - start.y)))
+        guard let window, let origin = dragOrigin, let start = dragMouseScreen else { return }
+        let mouseScreen = window.convertPoint(toScreen: event.locationInWindow)
+        window.setFrameOrigin(NSPoint(x: origin.x + (mouseScreen.x - start.x),
+                                     y: origin.y + (mouseScreen.y - start.y)))
     }
 
     override func mouseUp(with event: NSEvent) {
         dragOrigin = nil
-        dragStartLocal = nil
+        dragMouseScreen = nil
     }
 }
 
@@ -134,21 +138,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.sendEvent(event)
         }
 
+        // 合成事件的 locationInWindow 相对**当前**窗口，
+        // 而应用算的是"鼠标的屏幕位移"→ 局部坐标要按窗口当前原点反算。
+        let origin0 = window.frame.origin
+        func local(forScreenDelta dx: CGFloat, _ dy: CGFloat) -> NSPoint {
+            let current = window.frame.origin
+            // 屏幕位移 = (窗口当前原点 - 起点原点) + 抓取点 + 期望位移
+            let wantScreen = NSPoint(x: origin0.x + start.x + dx, y: origin0.y + start.y + dy)
+            return NSPoint(x: wantScreen.x - current.x, y: wantScreen.y - current.y)
+        }
+
         send(.mouseMoved, start)
         send(.leftMouseDown, start)
         usleep(120_000)
+        var worstDeviation: CGFloat = 0
         for step in 1...10 {
             let t = CGFloat(step) / 10
-            send(.leftMouseDragged, NSPoint(x: start.x + delta.x * t, y: start.y + delta.y * t))
+            send(.leftMouseDragged, local(forScreenDelta: delta.x * t, delta.y * t))
             usleep(30_000)
+            // 逐帧检查：窗口是否精确跟到了期望位置（不能有迟滞）
+            let expected = NSPoint(x: origin0.x + delta.x * t, y: origin0.y + delta.y * t)
+            let actual = window.frame.origin
+            worstDeviation = max(worstDeviation, max(abs(actual.x - expected.x), abs(actual.y - expected.y)))
         }
-        send(.leftMouseUp, NSPoint(x: start.x + delta.x, y: start.y + delta.y))
+        send(.leftMouseUp, local(forScreenDelta: delta.x, delta.y))
         usleep(300_000)
 
         let after = window.frame.origin
         let moved = abs(after.x - before.x) > 30 || abs(after.y - before.y) > 30
-        print("[selftest] 拖动前 \(before) → 拖动后 \(after) → \(moved ? "✅ 拖动生效" : "❌ 窗口没动")")
-        exit(moved ? 0 : 1)
+        let smooth = worstDeviation < 2
+        print("[selftest] 拖动前 \(before) → 拖动后 \(after)  最大逐帧偏差 \(Int(worstDeviation))px")
+        print("[selftest] \(moved ? "✅ 拖动生效" : "❌ 窗口没动") \(smooth ? "·✅ 逐帧贴合光标" : "·❌ 有迟滞")")
+        exit(moved && smooth ? 0 : 1)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
