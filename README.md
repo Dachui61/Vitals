@@ -32,6 +32,7 @@ scripts/                   build.sh / test.sh / package.sh(票 15) / frontier.sh
 prototypes/                悬浮窗原型（视觉与响应式分级的依据）
 docs/                      SPEC.md(票 17)、adr/、acceptance.md(票 07)
 research/                  各项实测报告（分支 research/*）
+docs/adr/                  三篇决策记录：温度后端、特权组件、私有接口降级
 .scratch/vitals/           wayfinder 地图与票据
 ```
 
@@ -47,3 +48,8 @@ research/                  各项实测报告（分支 research/*）
 ## 开发路线图
 
 `.scratch/vitals/map.md` 是总图，`./scripts/frontier.sh` 列出当前可动手的票。已定的产品决策都在地图的 Notes 与 Decisions so far 里。
+
+## 相关链接
+
+- 个人站（项目介绍、调研笔记、决策记录）：<https://dachui61.github.io/>
+- 站点源码：<https://github.com/Dachui61/Dachui61.github.io>
